@@ -1,0 +1,13 @@
+name: dbt_project
+version: '1.0'
+config-version: 2
+
+profile: dbt_project
+
+model-paths: ["models"]
+
+models:
+  dbt_project:
+    +materialized: table
+    staging:
+      +schema: staging

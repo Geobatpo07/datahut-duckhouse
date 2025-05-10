@@ -1,0 +1,49 @@
+version: 2
+
+sources:
+  - name: main
+    description: Table brute ingérée via Arrow Flight dans DuckDB
+    tables:
+      - name: rev
+        description: |
+          Données médicales avec symptômes, diagnostics et résultats.
+        columns:
+          - name: Disease
+            description: Nom de la maladie diagnostiquée
+          - name: Fever
+            description: Symptôme "Fièvre" (Yes/No)
+          - name: Cough
+            description: Symptôme "Toux" (Yes/No)
+          - name: Fatigue
+            description: Symptôme "Fatigue" (Yes/No)
+          - name: Difficulty Breathing
+            description: Symptôme "Difficulté respiratoire" (Yes/No)
+          - name: Age
+            description: Âge du patient
+            tests:
+              - not_null
+              - accepted_range:
+                  min: 0
+                  max: 120
+          - name: Gender
+            description: Sexe du patient
+            tests:
+              - accepted_values:
+                  values: ['Male', 'Female']
+          - name: Outcome Variable
+            description: Résultat de diagnostic (Positive/Negative)
+
+models:
+  - name: stg_rev
+    description: Modèle de staging des données patients avec colonnes encodées
+    columns:
+      - name: outcome_binary
+        description: 1 = Positive, 0 = Negative
+        tests:
+          - not_null
+
+  - name: mart_rev_metrics
+    description: Agrégation par maladie avec taux de positivité et moyenne des symptômes
+    columns:
+      - name: positivity_rate
+        description: Proportion moyenne de cas positifs pour chaque maladie
