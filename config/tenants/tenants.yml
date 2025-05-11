@@ -1,0 +1,6 @@
+# config/tenants/tenants.yaml
+tenants:
+  - id: tenant_acme
+    warehouse: s3a://tenant-acme/
+  - id: tenant_beta
+    warehouse: s3a://tenant-beta/
