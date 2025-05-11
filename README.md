@@ -1,8 +1,8 @@
 # 🏠 DataHut-DuckHouse
 
-**DataHut-DuckHouse** est une plateforme analytique légère, hybride et open source qui combine la simplicité de **DuckDB**, la scalabilité d'**Iceberg**, la rapidité d'**Arrow Flight** et la modularité de **dbt** pour créer un data stack moderne, local ou cloud-ready.
+**DataHut-DuckHouse** est une plateforme analytique légère, hybride et open source qui combine la simplicité de **DuckDB**, la scalabilité d'**Iceberg**, la rapidité d'**Arrow Flight**, l’orchestration de **Xorq** et la modularité de **dbt** pour créer un data stack moderne, local ou cloud-ready.
 
-## Architecture
+## 🧱 Architecture SaaS hybride
 
 ```
              +------------------------+
@@ -18,89 +18,110 @@
                          v
           +--------------+---------------+
           |     Serveur Arrow Flight     |
-          |        (app.py)              |
-          | - stocke dans DuckDB         |
-          | - crée vues ou tables        |
+          |        (Xorq + app.py)       |
+          | - backend hybride Iceberg + DuckDB
+          | - snapshots, vues synchronisées
           +--------------+---------------+
                          |
-            +------------+-----------+
-            |        DuckDB          |
-            |   (fichier .duckdb)    |
-            +------------+-----------+
-                         |
-                         v
-                  +-------------+
-                  |     dbt     |
-                  | Transformations |
-                  +-------------+
+         +---------------+----------------+
+         |                                  |
+     +--------+                       +-------------+
+     | DuckDB |                       |   Iceberg   |
+     +--------+                       +-------------+
+         |                                  |
+         +--------+         +---------------+
+                  |         |
+               +-------------+        +-------------+
+               |     dbt     |        |    Trino    |
+               +-------------+        +-------------+
+                    |                      |
+                    |                      v
+                    |              outils BI (Metabase, Tableau)
+                    |
+                    v
+             modèles SQL par tenant
 ```
 
-## Fonctionnalités
+## ✨ Fonctionnalités
 
-- 🔗 Ingestion de données via Arrow Flight
-- 🐤 Stockage hybride avec **DuckDB** (et Iceberg à venir)
+- 🔗 Ingestion rapide via Arrow Flight
+- 🐤 Stockage hybride : **DuckDB** local & **Iceberg** (MinIO)
+- 🧠 Orchestration via **Xorq** (Flight + backends multiples)
+- 🔄 Synchronisation automatique avec Trino (catalogues)
 - 📊 Transformations SQL déclaratives avec **dbt**
-- 📦 Environnement reproductible avec **Poetry**
-- ☁️ Compatible avec S3/MinIO pour le stockage objet
+- 📦 Multi-tenant : création/suppression dynamique
+- ☁️ Intégration S3 via MinIO
 
 ## ⚙️ Prérequis
 
-- [Python 3.11](https://www.python.org/downloads/)
+- [Python 3.11+](https://www.python.org/downloads/)
 - [Poetry](https://python-poetry.org/docs/)
 - [Docker](https://www.docker.com/)
 - [dbt CLI](https://docs.getdbt.com/dbt-cli/installation)
 
-## Installation
+## 🚀 Installation
 
 ### 1. Cloner le dépôt
 
 ```bash
-git clone https://github.com/ton-utilisateur/datahut-duckhouse.git
+git clone https://github.com/Geobatpo07/datahut-duckhouse.git
 cd datahut-duckhouse
 ```
 
-### 2. Installer les dépendances
+### 2. Installer les dépendances Python
 
 ```bash
 poetry install
 ```
 
-### 3. Lancer les services (MinIO + Flight Server)
+### 3. Lancer l’environnement complet
 
 ```bash
 docker-compose up --build
 ```
 
-### 4. Ingestion de données
+### 4. Créer un tenant
 
-Placer un fichier CSV dans `ingestion/data/data.csv`, puis :
+```bash
+poetry run python scripts/create_tenant.py --id tenant_acme
+```
+
+### 5. Ingestion de données
+
+Placer un CSV dans `ingestion/data/data.csv` puis :
 
 ```bash
 poetry run python scripts/ingest_flight.py
 ```
 
-## Structure du projet
+## 📂 Structure du projet
 
 ```
 datahut-duckhouse/
-├── flight_server/       # Serveur Arrow Flight avec backend DuckDB
-│   ├── app.py
-│   └── utils.py
-├── ingestion/           # Données sources
-│   └── data/
-├── scripts/             # Scripts Python (ingestion, requêtes)
+├── flight_server/        # Serveur Arrow Flight + HybridBackend
+|   ├── app/
+│      ├── app.py
+|      ├── app_xorq.py
+│      ├── xorq_config.py
+│      ├── utils.py
+│      └── backends/hybrid_backend.py
+├── ingestion/data/       # Données sources
+├── scripts/              # Ingestion, requêtes, gestion tenants
 │   ├── ingest_flight.py
-│   └── query_duckdb.py
-├── transform/           # Projet dbt
-│   └── dbt_project/
-├── config/              # Fichier de configuration dbt
-│   └── dbt_profiles.yml
-├── .env                 # Variables d’environnement
-├── pyproject.toml       # Dépendances Poetry
-└── docker-compose.yml   # Conteneurs MinIO + Flight
+│   ├── query_duckdb.py
+│   ├── create_tenant.py
+│   └── delete_tenant.py
+├── transform/dbt_project/ # Modèles dbt
+├── config/               # Trino, dbt, tenants, users
+│   ├── trino/etc/
+│   ├── tenants/
+│   └── users/users.yamlx
+├── .env                  # Variables d’environnement
+├── docker-compose.yml
+└── pyproject.toml
 ```
 
-## 🧠 Utilisation de dbt
+## 🧠 Utiliser dbt avec DuckDB
 
 ```bash
 export DBT_PROFILES_DIR=transform/dbt_project/config
@@ -108,24 +129,36 @@ cd transform/dbt_project
 poetry run dbt run
 ```
 
-## Exemple de requête locale
+## 🔎 Exemple de requête locale
 
 ```bash
 poetry run python scripts/query_duckdb.py
 ```
 
-## Prochaines améliorations
+## 🔒 Suppression d’un tenant
 
-- ❄️ Intégration du backend Iceberg
-- 🧪 Ajout de tests dbt (`dbt test`)
-- 📈 Dashboards interactifs avec DuckDB + Observable ou Streamlit
-- ☁️ Intégration BigQuery / Snowflake via Arrow Flight
+```bash
+poetry run python scripts/delete_tenant.py --id tenant_acme
+```
 
-## Licence
+## 📈 Interface BI avec Trino
 
-Ce projet est sous licence MIT.
+Accéder à Trino : [http://localhost:8080](http://localhost:8080)  
+Utiliser `tenant_acme` comme catalogue Trino dans Superset ou Metabase.
 
-## Auteur
+## 🛣️ Roadmap
 
-Geovany Batista Polo LAGUERRE – lgeobatpo98@gmail.com  
-Data Science & Analytics Engineer
+- ✅ Multi-tenant Iceberg + DuckDB
+- ✅ Enregistrement dynamique Xorq + Trino
+- 🔜 Interface Flask/React de gestion
+- 🔜 Authentification + rôles utilisateurs
+- 🔜 Intégration Metabase ou Superset
+- 🔜 Déploiement SaaS sur cloud public
+
+## 📄 Licence
+
+Projet sous licence MIT.
+
+## ✍️ Auteur
+
+Geovany Batista Polo LAGUERRE – [lgeobatpo98@gmail.com](mailto:lgeobatpo98@gmail.com) | Data Science & Analytics Engineer
