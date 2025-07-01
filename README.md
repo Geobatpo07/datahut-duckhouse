@@ -1,26 +1,26 @@
 # 🏠 DataHut-DuckHouse
 
-**DataHut-DuckHouse** est une plateforme analytique légère, hybride et open source qui combine la simplicité de **DuckDB**, la scalabilité d'**Iceberg**, la rapidité d'**Arrow Flight**, l’orchestration de **Xorq** et la modularité de **dbt** pour créer un data stack moderne, local ou cloud-ready.
+**DataHut-DuckHouse** is a lightweight, hybrid, and open-source analytics platform that combines the simplicity of **DuckDB**, the scalability of **Iceberg**, the speed of **Arrow Flight**, the orchestration power of **Xorq**, and the modularity of **dbt** to create a modern, local or cloud-ready data stack.
 
 ## 🧱 Architecture SaaS hybride
 
 ```
              +------------------------+
-             |  CSV / Fichiers locaux |
+             |  CSV / Local Files     |
              +-----------+------------+
                          |
                          v
              +------------------------+
-             |    Client Arrow Flight |
-             |  (ingest_flight.py)    |
+             |   Arrow Flight Client  |
+             |   (ingest_flight.py)   |
              +-----------+------------+
                          |
                          v
           +--------------+---------------+
-          |     Serveur Arrow Flight     |
-          |        (Xorq + app.py)       |
-          | - backend hybride Iceberg + DuckDB
-          | - snapshots, vues synchronisées
+          |   Arrow Flight Server        |
+          |     (Xorq + app.py)          |
+          | - hybrid backend: Iceberg + DuckDB
+          | - snapshots, synchronized views
           +--------------+---------------+
                          |
          +---------------+----------------+
@@ -36,23 +36,23 @@
                +-------------+        +-------------+
                     |                      |
                     |                      v
-                    |              outils BI (Metabase, Tableau)
+                    |              BI Tools (Metabase, Tableau)
                     |
                     v
-             modèles SQL par tenant
+             SQL models per tenant
 ```
 
-## ✨ Fonctionnalités
+## ✨ Features
 
-- 🔗 Ingestion rapide via Arrow Flight
-- 🐤 Stockage hybride : **DuckDB** local & **Iceberg** (MinIO)
-- 🧠 Orchestration via **Xorq** (Flight + backends multiples)
-- 🔄 Synchronisation automatique avec Trino (catalogues)
-- 📊 Transformations SQL déclaratives avec **dbt**
-- 📦 Multi-tenant : création/suppression dynamique
-- ☁️ Intégration S3 via MinIO
+- 🔗 Fast ingestion via Arrow Flight
+- 🐤 Hybrid storage: local DuckDB & Iceberg (MinIO)
+- 🧠 Orchestration with Xorq (Flight + multi-backend support)
+- 🔄 Auto-synchronization with Trino (catalogs)
+- 📊 Declarative SQL transformations using dbt
+- 📦 Multi-tenancy: dynamic tenant creation/deletion
+- ☁️ S3 integration via MinIO
 
-## ⚙️ Prérequis
+## ⚙️ Requirements
 
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Poetry](https://python-poetry.org/docs/)
@@ -61,67 +61,67 @@
 
 ## 🚀 Installation
 
-### 1. Cloner le dépôt
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/Geobatpo07/datahut-duckhouse.git
 cd datahut-duckhouse
 ```
 
-### 2. Installer les dépendances Python
+### 2. Install Python dependencies
 
 ```bash
 poetry install
 ```
 
-### 3. Lancer l’environnement complet
+### 3. Launch the full environment
 
 ```bash
 docker-compose up --build
 ```
 
-### 4. Créer un tenant
+### 4. Create a tenant
 
 ```bash
 poetry run python scripts/create_tenant.py --id tenant_acme
 ```
 
-### 5. Ingestion de données
+### 5. Ingest data
 
-Placer un CSV dans `ingestion/data/data.csv` puis :
+Place a CSV file in ingestion/data/data.csv then run:
 
 ```bash
 poetry run python scripts/ingest_flight.py
 ```
 
-## 📂 Structure du projet
+## 📂 Project Structure
 
 ```
 datahut-duckhouse/
-├── flight_server/        # Serveur Arrow Flight + HybridBackend
-|   ├── app/
+├── flight_server/        # Arrow Flight Server + HybridBackend
+│   ├── app/
 │      ├── app.py
-|      ├── app_xorq.py
+│      ├── app_xorq.py
 │      ├── xorq_config.py
 │      ├── utils.py
 │      └── backends/hybrid_backend.py
-├── ingestion/data/       # Données sources
-├── scripts/              # Ingestion, requêtes, gestion tenants
+├── ingestion/data/       # Source data
+├── scripts/              # Ingestion, queries, tenant management
 │   ├── ingest_flight.py
 │   ├── query_duckdb.py
 │   ├── create_tenant.py
 │   └── delete_tenant.py
-├── transform/dbt_project/ # Modèles dbt
+├── transform/dbt_project/ # dbt models
 ├── config/               # Trino, dbt, tenants, users
 │   ├── trino/etc/
 │   ├── tenants/
 │   └── users/users.yamlx
-├── .env                  # Variables d’environnement
+├── .env                  # Environment variables
 ├── docker-compose.yml
 └── pyproject.toml
 ```
 
-## 🧠 Utiliser dbt avec DuckDB
+## 🧠 Using dbt with DuckDB
 
 ```bash
 export DBT_PROFILES_DIR=transform/dbt_project/config
@@ -129,36 +129,36 @@ cd transform/dbt_project
 poetry run dbt run
 ```
 
-## 🔎 Exemple de requête locale
+## 🔎 Example Local Query
 
 ```bash
 poetry run python scripts/query_duckdb.py
 ```
 
-## 🔒 Suppression d’un tenant
+## 🔒 Delete a Tenant
 
 ```bash
 poetry run python scripts/delete_tenant.py --id tenant_acme
 ```
 
-## 📈 Interface BI avec Trino
+## 📈 BI Interface with Trino
 
-Accéder à Trino : [http://localhost:8080](http://localhost:8080)  
-Utiliser `tenant_acme` comme catalogue Trino dans Superset ou Metabase.
+Access Trino at http://localhost:8080
+Use `tenant_acme` as the Trino catalog in Superset or Metabase.
 
 ## 🛣️ Roadmap
 
 - ✅ Multi-tenant Iceberg + DuckDB
-- ✅ Enregistrement dynamique Xorq + Trino
-- 🔜 Interface Flask/React de gestion
-- 🔜 Authentification + rôles utilisateurs
-- 🔜 Intégration Metabase ou Superset
-- 🔜 Déploiement SaaS sur cloud public
+- ✅ Dynamic registration with Xorq + Trino
+- 🔜 Flask/React management interface
+- 🔜 User authentication + role management
+- 🔜 Integration with Metabase or Superset
+- 🔜 SaaS deployment on public cloud
 
-## 📄 Licence
+## 📄 License
 
-Projet sous licence MIT.
+Project under MIT License.
 
-## ✍️ Auteur
+## ✍️ Author
 
 Geovany Batista Polo LAGUERRE – [lgeobatpo98@gmail.com](mailto:lgeobatpo98@gmail.com) | Data Science & Analytics Engineer
