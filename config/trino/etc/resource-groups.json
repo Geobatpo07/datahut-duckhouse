@@ -1,0 +1,51 @@
+{
+  "rootGroups": [
+    {
+      "name": "global",
+      "softMemoryLimit": "80%",
+      "hardConcurrencyLimit": 100,
+      "maxQueued": 1000,
+      "schedulingPolicy": "weighted",
+      "jmxExport": true,
+      "subGroups": [
+        {
+          "name": "data_engineers",
+          "softMemoryLimit": "50%",
+          "hardConcurrencyLimit": 50,
+          "maxQueued": 500,
+          "schedulingWeight": 3,
+          "jmxExport": true,
+          "environment": ".*"
+        },
+        {
+          "name": "analysts",
+          "softMemoryLimit": "30%",
+          "hardConcurrencyLimit": 30,
+          "maxQueued": 200,
+          "schedulingWeight": 2,
+          "jmxExport": true,
+          "environment": ".*"
+        },
+        {
+          "name": "adhoc",
+          "softMemoryLimit": "20%",
+          "hardConcurrencyLimit": 20,
+          "maxQueued": 100,
+          "schedulingWeight": 1,
+          "jmxExport": true,
+          "environment": ".*"
+        }
+      ]
+    }
+  ],
+  "selectors": [
+    {
+      "user": "system",
+      "group": "global.data_engineers"
+    },
+    {
+      "user": ".*",
+      "group": "global.analysts"
+    }
+  ]
+}

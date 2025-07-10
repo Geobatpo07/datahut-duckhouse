@@ -5,9 +5,27 @@ config-version: 2
 profile: dbt_project
 
 model-paths: ["models"]
+seed-paths: ["seeds"]
+analysis-paths: ["analysis"]
+macro-paths: ["macros"]
 
 models:
   dbt_project:
     +materialized: table
     staging:
+      +materialized: view
       +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts
+    
+overrides:
+      +enabled: true
+      +tags: ['iceberg', 'analytics']
+      +persist_docs: {
+          relation: true,
+          columns: true
+      }
+
+on-run-end:  
+  - '{% if execute %}echo "Run successfully!"{% endif %}'

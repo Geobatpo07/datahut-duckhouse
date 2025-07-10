@@ -4,4 +4,14 @@ dbt_project:
     dev:
       type: duckdb
       path: ingestion/data/duckhouse.duckdb
-      threads: 1
+      threads: 4
+    prod:
+      type: trino
+      schema: analytics
+      database: iceberg
+      host: localhost
+      port: 8080
+      user: datahut
+      password: ''
+      http_scheme: http
+      threads: 10

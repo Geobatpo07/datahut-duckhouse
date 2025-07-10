@@ -2,5 +2,6 @@
 <project version="4">
   <component name="SqlDialectMappings">
     <file url="file://$PROJECT_DIR$/transform" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/transform/dbt_project" dialect="GenericSQL" />
   </component>
 </project>

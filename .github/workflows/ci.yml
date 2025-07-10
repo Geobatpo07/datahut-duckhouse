@@ -1,0 +1,136 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+    
+    - name: Load cached venv
+      id: cached-poetry-dependencies
+      uses: actions/cache@v3
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
+    
+    - name: Install dependencies
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      run: poetry install --no-interaction --no-root
+    
+    - name: Install project
+      run: poetry install --no-interaction
+    
+    - name: Run linting
+      run: |
+        poetry run ruff check .
+        poetry run black --check .
+        poetry run isort --check-only .
+    
+    - name: Run type checking
+      run: poetry run mypy flight_server scripts
+    
+    - name: Run security check
+      run: |
+        poetry run bandit -r flight_server scripts
+        poetry run safety check
+    
+    - name: Run tests
+      run: poetry run pytest --cov=flight_server --cov=scripts --cov-report=xml
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: flight_server/Dockerfile
+        push: true
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/datahut-duckhouse:latest
+          ${{ secrets.DOCKER_USERNAME }}/datahut-duckhouse:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  integration-test:
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Create test environment file
+      run: |
+        cat > .env << EOF
+        DUCKDB_PATH=ingestion/data/duckhouse.duckdb
+        FLIGHT_SERVER_HOST=localhost
+        FLIGHT_SERVER_PORT=8815
+        FLIGHT_TABLE_NAME=test_table
+        CSV_PATH=ingestion/data/test_data.csv
+        ICEBERG_WAREHOUSE=s3://test-warehouse/
+        ICEBERG_NAMESPACE=test
+        ICEBERG_CATALOG=test_catalog
+        AWS_ACCESS_KEY_ID=minioadmin
+        AWS_SECRET_ACCESS_KEY=minioadmin123
+        S3_ENDPOINT=http://localhost:9000
+        DBT_PROFILES_DIR=transform/dbt_project/config
+        DBT_PROJECT_DIR=transform/dbt_project
+        EOF
+    
+    - name: Start services
+      run: |
+        docker-compose up -d minio
+        sleep 30
+    
+    - name: Run integration tests
+      run: |
+        # Wait for services to be ready
+        timeout 60 bash -c 'until curl -f http://localhost:9000/minio/health/live; do sleep 2; done'
+        
+        # Add integration test commands here
+        echo "Integration tests would run here"
+    
+    - name: Clean up
+      run: docker-compose down -v

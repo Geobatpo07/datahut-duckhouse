@@ -41,8 +41,8 @@
       </map>
     </option>
     <option name="dbtProjectName" value="dbt_project" />
-    <option name="dbtProjectsDir" value="$PROJECT_DIR$/transform" />
-    <option name="dbtTargetDir" value="$PROJECT_DIR$/transform/target" />
+    <option name="dbtProjectsDir" value="$PROJECT_DIR$/transform/dbt_project" />
+    <option name="dbtTargetDir" value="$PROJECT_DIR$/transform/dbt_project/target" />
     <option name="initialSettingsAreSet" value="true" />
     <option name="settingsDbtProjectDir" value="$PROJECT_DIR$/transform" />
     <option name="settingsDbtTargetDir" value="$PROJECT_DIR$/transform/target" />

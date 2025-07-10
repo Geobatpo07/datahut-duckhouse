@@ -3,7 +3,7 @@
   <component name="Black">
     <option name="sdkName" value="datahut-duckhouse" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Poetry (datahut-duckhouse) (4)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Poetry (datahut-duckhouse)" project-jdk-type="Python SDK" />
   <component name="PyCharmDSProjectLayout">
     <option name="id" value="JupyterRightHiddenStructureLayout" />
   </component>

@@ -1,6 +1,24 @@
 version: '3.8'
 
 services:
+
+  xorq:
+    build:
+      context: ./xorq
+    container_name: xorq-service
+    ports:
+      - "9980:9980"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9980/tenants/list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    environment:
+      - XORQ_STORAGE=xorq/metadata.db
+    networks:
+      - duckhouse-net
+
   minio:
     image: minio/minio:latest
     container_name: minio
@@ -13,6 +31,14 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - duckhouse-net
 
   flight-server:
     build:
@@ -30,7 +56,11 @@ services:
       S3_ENDPOINT: http://minio:9000
       FLIGHT_SERVER_PORT: 8815
     depends_on:
-      - minio
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - duckhouse-net
 
   trino:
     image: trinodb/trino:latest
@@ -40,7 +70,30 @@ services:
     volumes:
       - ./config/trino/etc:/etc/trino
     depends_on:
-      - minio
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - duckhouse-net
+
+  xorq-admin:
+    build:
+      context: ./xorq-admin-dashboard
+    container_name: xorq-admin
+    ports:
+      - "8090:80"
+    depends_on:
+      xorq:
+        condition: service_healthy
+    environment:
+      - REACT_APP_XORQ_API_URL=http://xorq-service:9980
+    restart: unless-stopped
+    networks:
+      - duckhouse-net
 
 volumes:
   minio_data:
+    driver: local
+
+networks:
+  duckhouse-net:

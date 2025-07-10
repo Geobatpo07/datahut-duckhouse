@@ -1,0 +1,123 @@
+version: 2
+
+sources:
+  - name: duckdb_local
+    description: "Local data for lightweight queries via DuckDB"
+    database: main
+    tables:
+      - name: rev
+        description: "Healthcare data with symptoms, diagnostics and outcomes (local copy)"
+        columns:
+          - name: Disease
+            description: "Diagnosed disease name"
+            tests:
+              - not_null
+          - name: Fever
+            description: "Fever symptom (Yes/No)"
+            tests:
+              - accepted_values:
+                  values: ['Yes', 'No']
+          - name: Cough
+            description: "Cough symptom (Yes/No)"
+            tests:
+              - accepted_values:
+                  values: ['Yes', 'No']
+          - name: Fatigue
+            description: "Fatigue symptom (Yes/No)"
+            tests:
+              - accepted_values:
+                  values: ['Yes', 'No']
+          - name: Difficulty Breathing
+            description: "Breathing difficulty symptom (Yes/No)"
+            tests:
+              - accepted_values:
+                  values: ['Yes', 'No']
+          - name: Age
+            description: "Patient age"
+            tests:
+              - not_null
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  max_value: 120
+          - name: Gender
+            description: "Patient gender"
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ['Male', 'Female']
+          - name: Blood Pressure
+            description: "Blood pressure level"
+            tests:
+              - accepted_values:
+                  values: ['High', 'Low', 'Normal']
+          - name: Cholesterol Level
+            description: "Cholesterol level"
+            tests:
+              - accepted_values:
+                  values: ['High', 'Low', 'Normal']
+          - name: Outcome Variable
+            description: "Diagnostic outcome (Positive/Negative)"
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ['Positive', 'Negative']
+        tests:
+          - dbt_utils.unique_combination_of_columns:
+              combination_of_columns:
+                - Disease
+                - Age
+                - Gender
+        freshness:
+          warn_after: {count: 6, period: hour}
+          error_after: {count: 24, period: hour}
+        loaded_at_field: "_loaded_at"
+
+  - name: iceberg_distributed
+    description: "Large datasets in Iceberg format via Trino (distributed queries)"
+    database: iceberg
+    schema: default
+    tables:
+      - name: patient_data
+        description: "Patient data in Iceberg format for large-scale analysis"
+        external: true
+        columns:
+          - name: patient_id
+            description: "Unique patient identifier"
+            tests:
+              - not_null
+              - unique
+          - name: disease
+            description: "Primary disease diagnosis"
+          - name: symptoms
+            description: "JSON array of symptoms"
+          - name: demographics
+            description: "Patient demographic information"
+          - name: outcome
+            description: "Treatment outcome"
+          - name: recorded_at
+            description: "Data recording timestamp"
+            tests:
+              - not_null
+        freshness:
+          warn_after: {count: 1, period: day}
+          error_after: {count: 3, period: day}
+        loaded_at_field: "recorded_at"
+
+  - name: historical_data
+    description: "Historical data for time-series analysis"
+    database: iceberg
+    schema: historical
+    tables:
+      - name: disease_trends
+        description: "Disease occurrence trends over time"
+        columns:
+          - name: date
+            description: "Date of data point"
+            tests:
+              - not_null
+          - name: disease_type
+            description: "Type of disease"
+          - name: case_count
+            description: "Number of cases"
+          - name: region
+            description: "Geographic region"

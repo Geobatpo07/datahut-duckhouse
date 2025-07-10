@@ -1,0 +1,2 @@
+source_name,schema_name,table_name,refresh_interval
+iceberg,default,patient_data,3h
