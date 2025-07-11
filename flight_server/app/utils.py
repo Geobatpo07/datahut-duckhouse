@@ -10,7 +10,7 @@ from pyiceberg.catalog import load_catalog
 import xorq as xo
 from xorq.flight.client import FlightClient
 from xorq.vendor.ibis.backends.duckdb import Backend as DuckDBBackend
-from xorq.vendor.ibis.backends.pyiceberg import Backend as IcebergBackend
+from xorq.backends.pyiceberg import Backend as IcebergBackend
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

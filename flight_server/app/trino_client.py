@@ -10,7 +10,7 @@ from contextlib import contextmanager
 import trino
 import pandas as pd
 from trino.auth import BasicAuthentication
-from trino.exceptions import TrinoException
+from trino.exceptions import TrinoQueryError
 
 from .monitoring import trace_operation, monitor_performance
 from .utils import get_iceberg_catalog
@@ -95,7 +95,7 @@ class TrinoClient:
                     
                     return df
                     
-            except TrinoException as e:
+            except TrinoQueryError as e:
                 logger.error(f"Trino query failed: {e}")
                 raise
             except Exception as e:

@@ -4,7 +4,7 @@ from xorq.registry import registry
 from xorq.flight.server import FlightServer
 from xorq.flight.client import FlightClient
 from xorq.vendor.ibis.backends.duckdb import Backend as DuckDBBackend
-from xorq.vendor.ibis.backends.pyiceberg import Backend as PyIcebergBackend
+from xorq.backends.pyiceberg import Backend as PyIcebergBackend
 
 from .utils import get_flight_client, get_duckdb_path, get_iceberg_warehouse_path
 from .trino_client import get_trino_client
