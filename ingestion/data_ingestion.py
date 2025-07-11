@@ -15,13 +15,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-from urllib.parse import urlparse
+from typing import Any
 
 import pandas as pd
-import pyarrow as pa
 import pyarrow.parquet as pq
-from sqlalchemy import create_engine, text, MetaData, Table
+from sqlalchemy import MetaData, Table, create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -64,7 +62,7 @@ class IngestionConfig:
     max_memory_mb: int = 1024
     enable_validation: bool = True
     enable_partitioning: bool = True
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -76,14 +74,14 @@ class IngestionMetrics:
     processing_time_seconds: float = 0.0
     data_size_mb: float = 0.0
     errors_encountered: int = 0
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
 
 
 class BaseConnector(ABC):
     """Abstract base class for data source connectors."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config = config
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
@@ -93,15 +91,16 @@ class BaseConnector(ABC):
         pass
 
     @abstractmethod
-    def read_data(self, query: Optional[str] = None, **kwargs) -> pd.DataFrame:
+    def read_data(self, query: str | None = None, **kwargs) -> pd.DataFrame:
         """Read data from the source."""
         pass
 
     @abstractmethod
-    def get_schema(self) -> Dict[str, str]:
+    def get_schema(self) -> dict[str, str]:
         """Get schema information from the source."""
         pass
 
+    @abstractmethod
     def disconnect(self) -> None:
         """Clean up resources and disconnect."""
         pass
@@ -110,10 +109,10 @@ class BaseConnector(ABC):
 class DatabaseConnector(BaseConnector):
     """Connector for SQL databases using SQLAlchemy."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
-        self.engine: Optional[Engine] = None
-        self.metadata: Optional[MetaData] = None
+        self.engine: Engine | None = None
+        self.metadata: MetaData | None = None
 
     def connect(self) -> bool:
         """Establish database connection."""
@@ -160,9 +159,9 @@ class DatabaseConnector(BaseConnector):
 
     def read_data(
         self,
-        query: Optional[str] = None,
-        table_name: Optional[str] = None,
-        chunk_size: Optional[int] = None,
+        query: str | None = None,
+        table_name: str | None = None,
+        chunk_size: int | None = None,
     ) -> pd.DataFrame:
         """Read data from database."""
         if not self.engine:
@@ -185,7 +184,7 @@ class DatabaseConnector(BaseConnector):
             self.logger.error(f"Error reading data: {e}")
             raise
 
-    def get_schema(self, table_name: str) -> Dict[str, str]:
+    def get_schema(self, table_name: str) -> dict[str, str]:
         """Get table schema information."""
         if not self.engine or not self.metadata:
             raise RuntimeError("Database connection not established")
@@ -211,7 +210,7 @@ class DatabaseConnector(BaseConnector):
 class CSVConnector(BaseConnector):
     """Connector for CSV files."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.file_path = Path(config["file_path"])
 
@@ -233,7 +232,7 @@ class CSVConnector(BaseConnector):
             self.logger.error(f"Error validating CSV file: {e}")
             return False
 
-    def read_data(self, chunk_size: Optional[int] = None, **kwargs) -> pd.DataFrame:
+    def read_data(self, chunk_size: int | None = None, **kwargs) -> pd.DataFrame:
         """Read data from CSV file."""
         try:
             csv_params = {
@@ -253,7 +252,7 @@ class CSVConnector(BaseConnector):
             self.logger.error(f"Error reading CSV file: {e}")
             raise
 
-    def get_schema(self) -> Dict[str, str]:
+    def get_schema(self) -> dict[str, str]:
         """Get CSV schema by reading a sample."""
         try:
             sample_df = pd.read_csv(self.file_path, nrows=100)
@@ -270,7 +269,7 @@ class CSVConnector(BaseConnector):
 class ParquetConnector(BaseConnector):
     """Connector for Parquet files."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.file_path = Path(config["file_path"])
 
@@ -290,7 +289,7 @@ class ParquetConnector(BaseConnector):
             self.logger.error(f"Error validating Parquet file: {e}")
             return False
 
-    def read_data(self, columns: Optional[List[str]] = None, **kwargs) -> pd.DataFrame:
+    def read_data(self, columns: list[str] | None = None, **kwargs) -> pd.DataFrame:
         """Read data from Parquet file."""
         try:
             return pd.read_parquet(self.file_path, columns=columns, **kwargs)
@@ -299,7 +298,7 @@ class ParquetConnector(BaseConnector):
             self.logger.error(f"Error reading Parquet file: {e}")
             raise
 
-    def get_schema(self) -> Dict[str, str]:
+    def get_schema(self) -> dict[str, str]:
         """Get Parquet schema information."""
         try:
             parquet_file = pq.ParquetFile(self.file_path)
@@ -322,7 +321,7 @@ class DataValidator:
         self.config = config
         self.logger = logging.getLogger(f"{__name__}.DataValidator")
 
-    def validate_dataframe(self, df: pd.DataFrame) -> Tuple[bool, List[str]]:
+    def validate_dataframe(self, df: pd.DataFrame) -> tuple[bool, list[str]]:
         """Validate DataFrame quality and consistency."""
         issues = []
 
@@ -394,7 +393,7 @@ class TenantDataManager:
             self.logger.error(f"Error adding tenant metadata: {e}")
             raise
 
-    def determine_partitioning_strategy(self, df: pd.DataFrame) -> Dict[str, Any]:
+    def determine_partitioning_strategy(self, df: pd.DataFrame) -> dict[str, Any]:
         """Determine optimal partitioning strategy based on data characteristics."""
         try:
             strategy = {
@@ -430,9 +429,9 @@ class DataIngestionOrchestrator:
         self.validator = DataValidator(config) if config.enable_validation else None
         self.tenant_manager = TenantDataManager(config)
         self.metrics = IngestionMetrics()
-        self.connector: Optional[BaseConnector] = None
+        self.connector: BaseConnector | None = None
 
-    def _create_connector(self, source_config: Dict[str, Any]) -> BaseConnector:
+    def _create_connector(self, source_config: dict[str, Any]) -> BaseConnector:
         """Factory method to create appropriate connector based on source type."""
         source_type = self.config.source_type
 
@@ -534,7 +533,7 @@ class DataIngestionOrchestrator:
             return False
 
     def ingest_data(
-        self, source_config: Dict[str, Any], destination_table: str, **kwargs
+        self, source_config: dict[str, Any], destination_table: str, **kwargs
     ) -> IngestionMetrics:
         """Main ingestion method orchestrating the entire process."""
         self.metrics.start_time = datetime.utcnow()
@@ -617,7 +616,7 @@ class DataIngestionOrchestrator:
 # Example usage and convenience functions
 def create_mysql_config(
     host: str, database: str, user: str, password: str, port: int = 3306
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create MySQL connection configuration."""
     return {
         "type": SourceType.MYSQL.value,
@@ -631,7 +630,7 @@ def create_mysql_config(
 
 def create_csv_config(
     file_path: str, separator: str = ",", encoding: str = "utf-8", header: int = 0
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create CSV file configuration."""
     return {
         "type": SourceType.CSV.value,
@@ -644,7 +643,7 @@ def create_csv_config(
 
 def quick_ingest(
     tenant_id: str,
-    source_config: Dict[str, Any],
+    source_config: dict[str, Any],
     destination_table: str,
     source_type: SourceType,
     **kwargs,
