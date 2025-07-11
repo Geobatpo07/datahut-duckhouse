@@ -1538,6 +1538,62 @@ socks = ["socksio (==1.*)"]
 zstd = ["zstandard (>=0.18.0)"]
 
 [[package]]
+name = "ibis-framework"
+version = "10.6.0"
+description = "The portable Python dataframe library"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "ibis_framework-10.6.0-py3-none-any.whl", hash = "sha256:f33b73075710425548f474c60489ac33adee499fa71736a4583f77b21b6f7ab8"},
+    {file = "ibis_framework-10.6.0.tar.gz", hash = "sha256:58dae8c926f4cef611e90e289ce8ff3ff00a06c1be32ecae4d9bede68f806f8a"},
+]
+
+[package.dependencies]
+atpublic = ">=2.3"
+duckdb = {version = ">=0.10.3,<1.3.0 || >1.3.0", optional = true, markers = "extra == \"duckdb\""}
+numpy = {version = ">=1.23.2,<3", optional = true, markers = "extra == \"duckdb\" or extra == \"trino\""}
+packaging = {version = ">=21.3", optional = true, markers = "extra == \"duckdb\""}
+pandas = {version = ">=1.5.3,<3", optional = true, markers = "extra == \"duckdb\" or extra == \"trino\""}
+parsy = ">=2"
+pyarrow = {version = ">=10.0.1", optional = true, markers = "extra == \"duckdb\" or extra == \"trino\""}
+pyarrow-hotfix = {version = ">=0.4", optional = true, markers = "extra == \"duckdb\" or extra == \"trino\""}
+python-dateutil = ">=2.8.2"
+rich = {version = ">=12.4.4", optional = true, markers = "extra == \"duckdb\" or extra == \"trino\""}
+sqlglot = ">=23.4"
+toolz = ">=0.11"
+trino = {version = ">=0.321", optional = true, markers = "extra == \"trino\""}
+typing-extensions = ">=4.3.0"
+tzdata = ">=2022.7"
+
+[package.extras]
+athena = ["fsspec[s3]", "numpy (>=1.23.2,<3)", "packaging (>=21.3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "pyathena[arrow,pandas] (>=3.11.0)", "rich (>=12.4.4)"]
+bigquery = ["db-dtypes (>=0.3)", "google-cloud-bigquery (>=3)", "google-cloud-bigquery-storage (>=2)", "numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pandas-gbq (>=0.26.1)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "pydata-google-auth (>=1.4.0)", "rich (>=12.4.4)"]
+clickhouse = ["clickhouse-connect[arrow,numpy,pandas] (>=0.5.23)", "numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)"]
+databricks = ["databricks-sql-connector-core (>=4)", "numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)"]
+datafusion = ["datafusion (>=0.6)", "numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)"]
+decompiler = ["black (>=22.1.0)"]
+deltalake = ["deltalake (>=0.9.0)"]
+druid = ["numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "pydruid (>=0.6.7)", "rich (>=12.4.4)"]
+duckdb = ["duckdb (>=0.10.3,!=1.3.0)", "numpy (>=1.23.2,<3)", "packaging (>=21.3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)"]
+examples = ["pins[gcs] (>=0.8.3)"]
+exasol = ["numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "pyexasol (>=0.25.2)", "rich (>=12.4.4)"]
+flink = ["numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)"]
+geospatial = ["geoarrow-types (>=0.2)", "geopandas (>=0.6)", "pyproj (>=3.3.0)", "shapely (>=2)"]
+impala = ["impyla (>=0.17)", "numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)"]
+mssql = ["numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "pyodbc (>=4.0.39)", "rich (>=12.4.4)"]
+mysql = ["mysqlclient (>=2.2.4)", "numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)"]
+oracle = ["numpy (>=1.23.2,<3)", "oracledb (>=1.3.1)", "packaging (>=21.3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)"]
+polars = ["numpy (>=1.23.2,<3)", "packaging (>=21.3)", "pandas (>=1.5.3,<3)", "polars (>=1)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)"]
+postgres = ["numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "psycopg[binary] (>=3.2.0)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)"]
+pyspark = ["numpy (>=1.23.2,<3)", "packaging (>=21.3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "pyspark (>=3.3.3,<4)", "rich (>=12.4.4)"]
+risingwave = ["numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "psycopg2 (>=2.8.4)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)"]
+snowflake = ["numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)", "snowflake-connector-python (>=3.0.2,!=3.3.0b1)"]
+sqlite = ["numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "regex (>=2021.7.6)", "rich (>=12.4.4)"]
+trino = ["numpy (>=1.23.2,<3)", "pandas (>=1.5.3,<3)", "pyarrow (>=10.0.1)", "pyarrow-hotfix (>=0.4)", "rich (>=12.4.4)", "trino (>=0.321)"]
+visualization = ["graphviz (>=0.16)"]
+
+[[package]]
 name = "identify"
 version = "2.6.12"
 description = "File identification library for Python"
@@ -3129,7 +3185,6 @@ description = ""
 optional = false
 python-versions = ">=3.5"
 groups = ["main"]
-markers = "python_version < \"4.0\""
 files = [
     {file = "pyarrow_hotfix-0.7-py3-none-any.whl", hash = "sha256:3236f3b5f1260f0e2ac070a55c1a7b339c4bb7267839bd2015e283234e758100"},
     {file = "pyarrow_hotfix-0.7.tar.gz", hash = "sha256:59399cd58bdd978b2e42816a4183a55c6472d4e33d183351b6069f11ed42661d"},
@@ -5199,4 +5254,4 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11"
-content-hash = "87effa13c9f5489f46259e4628d947b5d372324a5b40929ae74bad18ee1a72d1"
+content-hash = "4008440a022e31dfa63684a4782e3821555a26519e79a6f4de216e78d15f32cf"

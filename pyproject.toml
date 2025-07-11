@@ -37,6 +37,7 @@ fastapi = "^0.116.0"
 uvicorn = "^0.24.0"
 pydantic = "^2.9.0"
 sqlalchemy = "^2.0.0"
+ibis-framework = {extras = ["duckdb", "trino"], version = "^10.6.0"}
 
 [tool.poetry.group.dev.dependencies]
 ipython = "^9.0.2"
