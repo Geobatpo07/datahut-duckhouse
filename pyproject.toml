@@ -29,13 +29,15 @@ opentelemetry-sdk = ">=1.14.0"
 opentelemetry-exporter-jaeger = ">=1.14.0"
 opentelemetry-instrumentation-grpc = ">=0.48b0"
 psutil = ">=5.9.0"
-trino = ">=0.328.0"
+trino = {version = ">=0.335.0", extras = ["sqlalchemy", "requests-kerberos"]}
 numpy = ">=1.24.0"
 registry = ">=0.4.2,<0.5.0"
+deprecated = "1.2.18"
 fastapi = "^0.116.0"
 uvicorn = "^0.24.0"
 pydantic = "^2.9.0"
 sqlalchemy = "^2.0.0"
+ibis-framework = {extras = ["duckdb", "trino"], version = "^10.6.0"}
 
 [tool.poetry.group.dev.dependencies]
 ipython = "^9.0.2"
@@ -63,7 +65,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "T20"]
-ignore = ["E501", "W503"]
+ignore = ["E501"]
 
 [tool.black]
 line-length = 88
@@ -78,6 +80,7 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "6.0"
