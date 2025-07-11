@@ -29,7 +29,7 @@ opentelemetry-sdk = ">=1.14.0"
 opentelemetry-exporter-jaeger = ">=1.14.0"
 opentelemetry-instrumentation-grpc = ">=0.48b0"
 psutil = ">=5.9.0"
-trino = ">=0.328.0"
+trino = {version = ">=0.335.0", extras = ["sqlalchemy", "requests-kerberos"]}
 numpy = ">=1.24.0"
 registry = ">=0.4.2,<0.5.0"
 deprecated = "1.2.18"
