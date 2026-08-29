@@ -140,6 +140,8 @@ bugs going forward.
        pinned `xorq==0.2.4`.
 5. [x] Update `docs/CORRECTED_ARCHITECTURE_SUMMARY.md` to reflect the retired routing
        layer once the above lands
+6. [x] Wire `HybridBackend` to an object-store (MinIO/S3) warehouse, not just a local
+       path (see "S3/MinIO wiring" note below)
 
 ### Post-implementation note (2026-08-29)
 
@@ -149,8 +151,44 @@ no `xorq.registry` module, no `xorq.duckdb.connect`, `FlightServer` takes
 `make_connection=`, not `client=`. These were invisible because the test suite mocked
 `xo`/`xorq` entirely rather than exercising the real package. Fixed in
 `hybrid_backend.py`, `xorq_config.py`, `app_xorq.py`, and `utils.py`; tests updated to
-mock at the correct import boundary instead of the defining module. Still open: the
-Iceberg `warehouse_path` the real backend expects is a local filesystem path, not an
-`s3://` URI — the MinIO/S3 wiring implied by `ICEBERG_WAREHOUSE` and
-`get_s3_filesystem()` in `utils.py` is not yet connected to `HybridBackend`. Tracked as a
-follow-up, not resolved by this ADR.
+mock at the correct import boundary instead of the defining module.
+
+### S3/MinIO wiring (2026-08-29, follow-up)
+
+The earlier open item — `HybridBackend` not actually connected to MinIO/S3 — is now
+resolved. `xorq==0.2.4`'s `PyIcebergBackend.do_connect` hard-codes a `file://` warehouse
+and an embedded SQLite catalog with no S3 hook at all, so `HybridBackend.do_connect` now
+builds the pyiceberg catalog itself:
+
+- A `warehouse_path` with an `s3://` / `s3a://` scheme is detected as remote; the catalog
+  is opened with `warehouse=s3://…` plus `s3.endpoint` / `s3.access-key-id` /
+  `s3.secret-access-key` / `s3.region` / `s3.path-style-access`, sourced from explicit
+  args or from `S3_ENDPOINT` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. A local
+  path keeps the old `file://` behaviour.
+- The **catalog itself** stays a SQL catalog: local SQLite for a single writer, or a
+  shared URI via `ICEBERG_CATALOG_URI`. Replacing it with Nessie is ADR-0002 / Phase 3;
+  a SQLite catalog over an S3 warehouse is an explicit single-writer interim.
+- DuckDB reads no longer go through DuckDB's `iceberg` extension (version-fragile,
+  needs a separate httpfs setup). `_reflect_views` now scans each Iceberg table with
+  pyiceberg and `register`s the Arrow result into DuckDB — one read path, identical for
+  local and S3. This is a full in-memory load; predicate/projection pushdown is the
+  scale follow-up, same bucket as the snapshot rewrite below.
+
+Two adjacent bugs fixed in passing, both on the write critical path:
+`_create_snapshot` copied the live `.duckdb` file (fails under Windows file locking) —
+now uses `EXPORT DATABASE`, best-effort, and skippable via `HYBRID_DUCKDB_SNAPSHOTS=0`;
+and `insert(mode="overwrite")` hit `iceberg_table.writer()`, absent from pyiceberg ≥ 0.9,
+so `HybridBackend.insert` handles overwrite via `Table.overwrite`.
+
+Verified end to end (not mocked): local-fs and S3 (moto) round trips — `create_table` →
+`insert` (append + overwrite) → read back through both the DuckDB view and pyiceberg;
+plus a Flight client `upload_table` → `do_put` → Iceberg → DuckDB reflection round trip.
+See `tests/test_hybrid_backend.py`.
+
+### Still open
+
+- The per-write snapshot + full-table reflection don't scale; revisit together when
+  volume demands it (see Consequences → "To revisit").
+- `flight_server/app/backends/iceberg_backend.py` and `utils.get_iceberg_backend` /
+  `get_duckdb_backend` are now-unused parallel backend helpers; candidates for removal
+  in a cleanup pass.

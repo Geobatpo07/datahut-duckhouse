@@ -42,14 +42,23 @@ push.
       comme backend unique du serveur Flight (via `make_connection=`, l'API réelle —
       corrigé aussi plusieurs bugs latents : imports cassés contre le vrai package
       `xorq`, import relatif manquant, `serve()` non-bloquant par défaut)
-- [ ] Test d'intégration : write via Flight → read via Flight → même résultat qu'un
-      accès direct au backend (partiellement vérifié : le chemin Iceberg est confirmé
-      de bout en bout ; le chemin DuckDB reste à valider hors du sandbox de dev, qui
-      bloque le téléchargement de l'extension `iceberg` de DuckDB)
+- [x] Test d'intégration : write via Flight → read via Flight → même résultat qu'un
+      accès direct au backend. Vérifié de bout en bout, chemins Iceberg **et** DuckDB,
+      en local et sur S3 (serveur `moto` en test, pas besoin de Docker) — cf.
+      `tests/test_hybrid_backend.py`. La lecture DuckDB ne passe plus par l'extension
+      `iceberg` de DuckDB : `_reflect_views` scanne via pyiceberg et `register` le
+      résultat Arrow dans DuckDB (un seul chemin de lecture, local ou S3).
+- [x] Câblage MinIO/S3 réel sur `HybridBackend` : détection du schéma `s3://`,
+      `s3.endpoint` / identifiants / `path-style` depuis l'environnement. Le catalogue
+      reste SQL (SQLite local mono-writer, ou `ICEBERG_CATALOG_URI`) en attendant
+      Nessie (Phase 3). Deux bugs corrigés au passage : snapshot par copie de fichier
+      (échoue sous Windows → `EXPORT DATABASE`), `insert(mode="overwrite")` cassé
+      contre pyiceberg ≥ 0.9.
 
 **Dépendances :** Phase 0.
 **Sortie de phase :** un `docker-compose up` + un client Flight quelconque peut faire un
-aller-retour complet sur une table.
+aller-retour complet sur une table. ✅ Atteinte (validée hors Docker ; reste à faire
+tourner un `docker-compose up` réel de bout en bout).
 
 ---
 

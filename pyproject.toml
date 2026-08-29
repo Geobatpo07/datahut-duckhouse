@@ -52,6 +52,7 @@ sphinx = "^7.2.0"
 sphinx-rtd-theme = "^2.0.0"
 bandit = "^1.7.0"
 safety = "^3.0.0"
+moto = { version = "^5.0.0", extras = ["s3", "server"] }
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

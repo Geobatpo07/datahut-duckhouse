@@ -106,12 +106,13 @@ def get_duckdb_backend() -> DuckDBBackend:
 
 def get_iceberg_backend() -> IcebergBackend:
     """
-    Create and return a connected Iceberg backend instance.
+    Create and return a connected *vanilla* xorq Iceberg backend (local
+    filesystem warehouse, embedded SQLite catalog).
 
-    Note: `warehouse_path` here is a local filesystem path, matching what
-    `IcebergBackend.do_connect` actually accepts in the installed xorq
-    version — it is not yet wired to MinIO/S3 (`get_s3_filesystem` /
-    `ICEBERG_WAREHOUSE` above target a different, unconnected code path).
+    Bare helper kept for ad-hoc/debug use. The platform's real Iceberg access
+    — including MinIO/S3 warehouses — goes through
+    `flight_server.app.backends.hybrid_backend.HybridBackend` (ADR-0001), which
+    the Flight server wires up via `xorq_config`.
     """
     try:
         backend = IcebergBackend()

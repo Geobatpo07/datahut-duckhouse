@@ -21,7 +21,7 @@ class TestDuckDBUtils:
         """Test get_duckdb_path with default path."""
         with patch.dict(os.environ, {}, clear=True):
             path = get_duckdb_path()
-            assert path.endswith("ingestion/data/duckhouse.duckdb")
+            assert path.replace(os.sep, "/").endswith("ingestion/data/duckhouse.duckdb")
 
     def test_get_duckdb_path_custom(self):
         """Test get_duckdb_path with custom path."""

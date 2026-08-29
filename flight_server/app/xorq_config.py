@@ -9,33 +9,49 @@ from .utils import get_duckdb_path
 logger = logging.getLogger(__name__)
 
 
+def _warehouse_location() -> str:
+    """
+    Emplacement du warehouse Iceberg.
+
+    Priorité : ``ICEBERG_WAREHOUSE`` (typiquement une URI ``s3://…`` — MinIO en
+    dev, S3 en prod) puis ``ICEBERG_WAREHOUSE_PATH`` (chemin local), puis un
+    répertoire local par défaut. `HybridBackend.do_connect` détecte le schéma
+    ``s3://`` et configure l'accès objet à partir des variables
+    ``S3_ENDPOINT`` / ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY``.
+    """
+    return (
+        os.getenv("ICEBERG_WAREHOUSE")
+        or os.getenv("ICEBERG_WAREHOUSE_PATH")
+        or os.path.join(os.getcwd(), "data", "iceberg_warehouse")
+    )
+
+
 def make_hybrid_connection() -> HybridBackend:
     """
     Construit et connecte l'unique backend du serveur Flight (ADR-0001) :
     HybridBackend, où Iceberg est la seule cible d'écriture et DuckDB ne fait
-    que refléter les tables Iceberg via des vues.
+    que refléter les tables Iceberg.
 
-    Note : `warehouse_path` est ici un chemin de fichier local, pas une URI S3
-    (`s3://...`) — c'est ce qu'attend `PyIcebergBackend.do_connect` dans la
-    version de xorq réellement installée (elle fait `Path(warehouse_path)`).
-    Le branchement effectif sur MinIO/S3 (`ICEBERG_WAREHOUSE`,
-    `get_s3_filesystem` dans utils.py) n'est pas encore câblé à ce backend —
-    à traiter comme un point ouvert distinct, pas résolu par ce changement.
+    Le warehouse peut être local ou objet (``s3://`` / MinIO) : le câblage S3
+    est porté par `HybridBackend`, qui lit l'endpoint et les identifiants dans
+    l'environnement. Le catalogue reste un catalogue SQL — SQLite local tant
+    qu'il n'y a qu'un writer, ``ICEBERG_CATALOG_URI`` pour un catalogue partagé
+    en attendant Nessie (ADR-0002).
     """
-    warehouse_path = os.getenv(
-        "ICEBERG_WAREHOUSE_PATH",
-        os.path.join(os.getcwd(), "data", "iceberg_warehouse"),
-    )
+    warehouse = _warehouse_location()
     duckdb_path = get_duckdb_path()
-    logger.info(f"Connexion HybridBackend — warehouse={warehouse_path}, duckdb={duckdb_path}")
+    logger.info(
+        f"Connexion HybridBackend — warehouse={warehouse}, duckdb={duckdb_path}"
+    )
 
     backend = HybridBackend()
     backend.do_connect(
-        warehouse_path=warehouse_path,
+        warehouse_path=warehouse,
         duckdb_path=duckdb_path,
         namespace=os.getenv("ICEBERG_NAMESPACE", "default"),
         catalog_name=os.getenv("ICEBERG_CATALOG", "default"),
         catalog_type=os.getenv("ICEBERG_CATALOG_TYPE", "sql"),
+        catalog_uri=os.getenv("ICEBERG_CATALOG_URI"),
     )
     return backend
 
