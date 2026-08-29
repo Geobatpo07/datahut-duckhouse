@@ -150,8 +150,8 @@ class TestS3RoundTrip:
     def s3_env(self, monkeypatch):
         import socket
 
-        from moto.server import ThreadedMotoServer
         import boto3
+        from moto.server import ThreadedMotoServer
 
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))

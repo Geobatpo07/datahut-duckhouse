@@ -1,9 +1,9 @@
 import os
-import pyarrow as pa
+import subprocess
+
+import duckdb
 import pyarrow.csv as csv
 import pyarrow.flight as flight
-import duckdb
-import subprocess
 from dotenv import load_dotenv
 
 # Charger les variables d'environnement depuis .env
@@ -18,6 +18,7 @@ FLIGHT_TARGET = os.getenv("FLIGHT_TARGET", "duckdb")
 DUCKDB_PATH = os.getenv("DUCKDB_PATH", "ingestion/data/duckhouse.duckdb")
 DBT_PROJECT_PATH = "transform/dbt_project"
 DBT_PROFILES_DIR = f"{DBT_PROJECT_PATH}/config"
+
 
 def ingest_data():
     print("Étape 1 : Envoi des données au serveur Arrow Flight...")
@@ -35,18 +36,26 @@ def ingest_data():
     writer, _ = client.do_put(descriptor, table.schema, options=options)
     writer.write_table(table)
     writer.done_writing()
-    print(f"Données envoyées vers '{TABLE_NAME}' ({table.num_rows} lignes) dans {FLIGHT_TARGET.upper()}")
+    print(
+        f"Données envoyées vers '{TABLE_NAME}' ({table.num_rows} lignes) dans {FLIGHT_TARGET.upper()}"
+    )
+
 
 def run_dbt():
     print("Étape 2 : Exécution des transformations dbt...")
     result = subprocess.run(
         [
-            "poetry", "run", "dbt", "run",
-            "--project-dir", DBT_PROJECT_PATH,
-            "--profiles-dir", DBT_PROFILES_DIR
+            "poetry",
+            "run",
+            "dbt",
+            "run",
+            "--project-dir",
+            DBT_PROJECT_PATH,
+            "--profiles-dir",
+            DBT_PROFILES_DIR,
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
     if result.returncode != 0:
         print("Erreur dans dbt run :")
@@ -54,6 +63,7 @@ def run_dbt():
         print(result.stderr)
         raise RuntimeError("dbt run failed")
     print("dbt run exécuté avec succès")
+
 
 def query_results():
     print("Étape 3 : Requête de validation dans DuckDB")
@@ -67,6 +77,7 @@ def query_results():
         print(df)
     except Exception as e:
         print(f"Impossible de lire 'mart_rev_metrics' : {e}")
+
 
 if __name__ == "__main__":
     ingest_data()

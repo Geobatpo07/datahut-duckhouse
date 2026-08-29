@@ -7,6 +7,7 @@ along with query_orchestrator.py: HybridBackend now routes all writes to Iceberg
 unconditionally, so there is no routing decision left to test. What remains is purely
 the textual complexity analysis, kept as a diagnostic utility.
 """
+
 from flight_server.app.query_diagnostics import (
     QueryMetrics,
     QueryType,

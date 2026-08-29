@@ -1,15 +1,16 @@
-import os
 import datetime
+import os
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Optional, Mapping, Any, Union
+from typing import Any
 
 import pyarrow as pa
 from pyiceberg.catalog import load_catalog
 from xorq.backends.pyiceberg import Backend as PyIcebergBackend
 from xorq.common.utils.logging_utils import get_print_logger
 from xorq.vendor.ibis.backends.duckdb import Backend as DuckDBBackend
-from xorq.vendor.ibis.expr import types as ir
 from xorq.vendor.ibis.expr import schema as sch
+from xorq.vendor.ibis.expr import types as ir
 
 logger = get_print_logger()
 
@@ -20,7 +21,7 @@ def _is_remote_warehouse(warehouse_path: str) -> bool:
     return str(warehouse_path).startswith(_S3_SCHEMES)
 
 
-def _env(*names: str) -> Optional[str]:
+def _env(*names: str) -> str | None:
     for name in names:
         value = os.getenv(name)
         if value:
@@ -58,17 +59,17 @@ class HybridBackend(PyIcebergBackend):
     def do_connect(
         self,
         warehouse_path: str,
-        duckdb_path: Optional[str] = None,
-        snapshot_dir: Optional[str] = None,
+        duckdb_path: str | None = None,
+        snapshot_dir: str | None = None,
         namespace: str = "default",
         catalog_name: str = "default",
         catalog_type: str = "sql",
-        catalog_uri: Optional[str] = None,
-        s3_endpoint: Optional[str] = None,
-        s3_access_key: Optional[str] = None,
-        s3_secret_key: Optional[str] = None,
-        s3_region: Optional[str] = None,
-        s3_path_style: Optional[bool] = None,
+        catalog_uri: str | None = None,
+        s3_endpoint: str | None = None,
+        s3_access_key: str | None = None,
+        s3_secret_key: str | None = None,
+        s3_region: str | None = None,
+        s3_path_style: bool | None = None,
         **kwargs,
     ) -> None:
         self.is_remote = _is_remote_warehouse(warehouse_path)
@@ -131,11 +132,11 @@ class HybridBackend(PyIcebergBackend):
     def _build_catalog_params(
         self,
         catalog_type: str,
-        s3_endpoint: Optional[str],
-        s3_access_key: Optional[str],
-        s3_secret_key: Optional[str],
-        s3_region: Optional[str],
-        s3_path_style: Optional[bool],
+        s3_endpoint: str | None,
+        s3_access_key: str | None,
+        s3_secret_key: str | None,
+        s3_region: str | None,
+        s3_path_style: bool | None,
     ) -> dict:
         params = {
             "type": catalog_type,
@@ -273,8 +274,8 @@ class HybridBackend(PyIcebergBackend):
         self,
         expr: ir.Expr,
         *,
-        params: Optional[Mapping[ir.Scalar, Any]] = None,
-        limit: Optional[Union[int, str]] = None,
+        params: Mapping[ir.Scalar, Any] | None = None,
+        limit: int | str | None = None,
         chunk_size: int = 10_000,
         **_: Any,
     ) -> pa.ipc.RecordBatchReader:

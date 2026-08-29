@@ -2,8 +2,8 @@
 """
 Run dbt to transform and test the analytics stack.
 """
-import sys
 import subprocess
+import sys
 
 
 def run_dbt_command(command, description):

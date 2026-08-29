@@ -1,6 +1,7 @@
 import os
-from dotenv import load_dotenv
+
 import pyarrow.csv as csv
+from dotenv import load_dotenv
 from xorq.flight.client import FlightClient
 
 # Charger les variables d'environnement
@@ -12,6 +13,7 @@ FLIGHT_SERVER_PORT = os.getenv("FLIGHT_SERVER_PORT", "8815")
 CSV_PATH = os.getenv("CSV_PATH", "ingestion/data/data.csv")
 TABLE_NAME = os.getenv("FLIGHT_TABLE_NAME", "diseases")
 FLIGHT_TARGET = os.getenv("FLIGHT_TARGET", "duckdb")
+
 
 def main():
     endpoint = f"grpc://{FLIGHT_SERVER_HOST}:{FLIGHT_SERVER_PORT}"
@@ -30,13 +32,10 @@ def main():
     print(f"{table.num_rows} lignes lues. Envoi vers backend : {FLIGHT_TARGET.upper()}")
 
     # Envoi via client Xorq
-    client.upload_data(
-        key=TABLE_NAME,
-        data=table,
-        target=FLIGHT_TARGET
-    )
+    client.upload_data(key=TABLE_NAME, data=table, target=FLIGHT_TARGET)
 
     print(f"Données envoyées avec succès à la table : {TABLE_NAME}")
+
 
 if __name__ == "__main__":
     main()

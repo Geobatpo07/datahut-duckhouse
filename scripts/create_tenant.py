@@ -1,10 +1,12 @@
-import os
 import argparse
+import os
 from pathlib import Path
-from dotenv import load_dotenv
+
 import boto3
-from pyiceberg.catalog import load_catalog
 import xorq.registry as registry
+from dotenv import load_dotenv
+from pyiceberg.catalog import load_catalog
+
 from flight_server.app.backends.hybrid_backend import HybridBackend
 
 # Charger les variables d'environnement
@@ -26,6 +28,7 @@ hive.s3.endpoint={s3_endpoint}
 hive.s3.path-style-access=true
 """
 
+
 def create_catalog_file(tenant_id: str, warehouse: str):
     TRINO_CATALOG_DIR.mkdir(parents=True, exist_ok=True)
     path = TRINO_CATALOG_DIR / f"tenant_{tenant_id}.properties"
@@ -34,7 +37,7 @@ def create_catalog_file(tenant_id: str, warehouse: str):
         warehouse=warehouse,
         access_key=DEFAULT_ACCESS_KEY,
         secret_key=DEFAULT_SECRET_KEY,
-        s3_endpoint=DEFAULT_S3_ENDPOINT
+        s3_endpoint=DEFAULT_S3_ENDPOINT,
     )
 
     with open(path, "w") as f:
@@ -42,18 +45,23 @@ def create_catalog_file(tenant_id: str, warehouse: str):
 
     print(f"Fichier Trino catalog généré : {path}")
 
+
 def create_namespace_in_iceberg(tenant_id: str, warehouse: str):
+    # NOTE: this script predates the HybridBackend S3 wiring (ADR-0001) and still
+    # passes pyiceberg catalog properties in the wrong shape; slated for a
+    # phase-2 rewrite to go through HybridBackend.
     catalog = load_catalog(
         name="default",
         uri=DEFAULT_S3_ENDPOINT,
         warehouse=f"s3://{warehouse}",
-        s3={"s3fs": boto3.resource("s3")}
+        s3={"s3fs": boto3.resource("s3")},  # type: ignore[arg-type]
     )
     if tenant_id not in catalog.list_namespaces():
         catalog.create_namespace(tenant_id)
         print(f"Namespace Iceberg '{tenant_id}' créé.")
     else:
         print(f"Namespace Iceberg '{tenant_id}' existe déjà.")
+
 
 def register_backend(tenant_id: str, warehouse: str):
     duckdb_path = os.path.join("ingestion", "data", f"{tenant_id}.duckdb")
@@ -66,11 +74,12 @@ def register_backend(tenant_id: str, warehouse: str):
         snapshot_dir=snapshot_dir,
         namespace=tenant_id,
         catalog_name=tenant_id,
-        catalog_type="sql"
+        catalog_type="sql",
     )
 
     registry.register(tenant_id, backend)
     print(f"Backend Xorq enregistré sous le nom '{tenant_id}'")
+
 
 def create_minio_bucket_path(warehouse: str):
     bucket_name = warehouse.split("/")[0]
@@ -87,9 +96,12 @@ def create_minio_bucket_path(warehouse: str):
         s3.create_bucket(Bucket=bucket_name)
         print(f"Bucket MinIO '{bucket_name}' créé.")
 
+
 def main():
     parser = argparse.ArgumentParser(description="Créer un nouveau tenant analytique.")
-    parser.add_argument("--id", required=True, help="Identifiant du tenant (ex: tenant_acme)")
+    parser.add_argument(
+        "--id", required=True, help="Identifiant du tenant (ex: tenant_acme)"
+    )
     parser.add_argument("--warehouse", help="Chemin S3 du warehouse (ex: tenant-acme)")
     args = parser.parse_args()
 
@@ -104,6 +116,7 @@ def main():
     register_backend(tenant_id, warehouse)
 
     print(f"\nTenant '{tenant_id}' initialisé avec succès.")
+
 
 if __name__ == "__main__":
     main()

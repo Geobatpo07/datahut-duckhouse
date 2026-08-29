@@ -1,0 +1,41 @@
+# Keep build contexts small and secret-free.
+
+.git
+.github
+.venv
+.idea
+.vscode
+node_modules
+xorq-admin-dashboard/node_modules
+xorq-admin-dashboard/dist
+
+# Secrets / local env — never ship these into an image
+.env
+.env.*
+!.devcontainer/.env.example
+
+# Python caches / artifacts
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+coverage.xml
+htmlcov
+*.egg-info
+build
+dist
+
+# Local data / snapshots
+snapshots
+ingestion/data
+*.duckdb
+identifier.db
+
+# Docs & meta
+docs
+*.md
+!README.md
+LICENSE

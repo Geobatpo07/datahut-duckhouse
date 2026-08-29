@@ -1,9 +1,10 @@
-import os
 import argparse
+import os
 from pathlib import Path
+
 import boto3
-from dotenv import load_dotenv
 import xorq.registry as registry
+from dotenv import load_dotenv
 
 # Charger les variables d’environnement
 load_dotenv()
@@ -27,12 +28,14 @@ def delete_catalog_file(tenant_id: str):
     else:
         print(f"Aucun fichier Trino trouvé pour le tenant : {tenant_id}")
 
+
 def unregister_backend(tenant_id: str):
     if tenant_id in registry.backends:
         del registry.backends[tenant_id]
         print(f"Backend Xorq supprimé : {tenant_id}")
     else:
         print(f"Aucun backend Xorq enregistré sous : {tenant_id}")
+
 
 def delete_duckdb_files(tenant_id: str):
     duckdb_file = INGESTION_DIR / f"{tenant_id}.duckdb"
@@ -46,6 +49,7 @@ def delete_duckdb_files(tenant_id: str):
             file.unlink()
         snapshot_path.rmdir()
         print(f"Snapshots supprimés : {snapshot_path}")
+
 
 def delete_minio_bucket(warehouse: str):
     bucket = warehouse.split("/")[0]
@@ -65,8 +69,11 @@ def delete_minio_bucket(warehouse: str):
     except Exception as e:
         print(f"Échec suppression bucket ou déjà supprimé : {bucket} ({e})")
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Supprimer un tenant et ses composants.")
+    parser = argparse.ArgumentParser(
+        description="Supprimer un tenant et ses composants."
+    )
     parser.add_argument("--id", required=True, help="Identifiant du tenant")
     parser.add_argument("--warehouse", help="Nom du bucket S3 (ex: tenant-acme)")
 
@@ -82,6 +89,7 @@ def main():
     delete_minio_bucket(warehouse)
 
     print(f"\nTenant '{tenant_id}' supprimé avec succès.")
+
 
 if __name__ == "__main__":
     main()

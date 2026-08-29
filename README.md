@@ -54,10 +54,9 @@
 
 ## ⚙️ Requirements
 
-- [Python 3.11+](https://www.python.org/downloads/)
-- [Poetry](https://python-poetry.org/docs/)
-- [Docker](https://www.docker.com/)
-- [dbt CLI](https://docs.getdbt.com/dbt-cli/installation)
+- [Python 3.11 or 3.12](https://www.python.org/downloads/) (uv can install it for you)
+- [uv](https://docs.astral.sh/uv/) — dependency & environment manager
+- [Docker](https://www.docker.com/) with the Compose plugin
 
 ## 🚀 Installation
 
@@ -71,27 +70,38 @@ cd datahut-duckhouse
 ### 2. Install Python dependencies
 
 ```bash
-poetry install
+uv sync          # creates .venv from uv.lock
 ```
 
-### 3. Launch the full environment
+Run any command inside the environment with `uv run <cmd>` (e.g. `uv run pytest`).
+
+### 3. Configure the environment
 
 ```bash
-docker-compose up --build
+make env         # copies .devcontainer/.env.example -> .env
+# then edit .env and set MINIO_ROOT_PASSWORD / AWS_SECRET_ACCESS_KEY
 ```
 
-### 4. Create a tenant
+`.env` is git-ignored and is the only place secrets live — the Dockerfiles and
+`docker-compose.yml` contain none.
+
+### 4. Launch the full environment
 
 ```bash
-poetry run python scripts/create_tenant.py --id tenant_acme
+docker compose up --build      # or: make docker-up
 ```
 
-### 5. Ingest data
+Docker build files live in [`.devcontainer/`](.devcontainer/); `docker-compose.yml`
+stays at the repo root. VS Code users can also "Reopen in Container" — the
+[`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) brings up the
+same stack as a dev environment.
 
-Place a CSV file in ingestion/data/data.csv then run:
+### 5. Create a tenant / ingest data
 
 ```bash
-poetry run python scripts/ingest_flight.py
+uv run python scripts/create_tenant.py --id tenant_acme
+# place a CSV at ingestion/data/data.csv, then:
+uv run python scripts/ingest_flight.py
 ```
 
 ## 📂 Project Structure
@@ -115,8 +125,10 @@ datahut-duckhouse/
 │   ├── trino/etc/
 │   ├── tenants/
 │   └── users/users.yamlx
-├── .env                  # Environment variables
-├── docker-compose.yml
+├── .devcontainer/        # Dockerfiles + devcontainer.json + .env.example
+├── .env                  # Secrets & config (git-ignored; from .devcontainer/.env.example)
+├── docker-compose.yml    # Stack definition (root; no secrets)
+├── uv.lock
 └── pyproject.toml
 ```
 
@@ -125,19 +137,19 @@ datahut-duckhouse/
 ```bash
 export DBT_PROFILES_DIR=transform/dbt_project/config
 cd transform/dbt_project
-poetry run dbt run
+uv run dbt run
 ```
 
 ## 🔎 Example Local Query
 
 ```bash
-poetry run python scripts/query_duckdb.py
+uv run python scripts/query_duckdb.py
 ```
 
 ## 🔒 Delete a Tenant
 
 ```bash
-poetry run python scripts/delete_tenant.py --id tenant_acme
+uv run python scripts/delete_tenant.py --id tenant_acme
 ```
 
 ## 📈 BI Interface with Trino

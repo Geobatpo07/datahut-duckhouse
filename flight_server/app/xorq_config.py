@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 
 from xorq.flight import FlightServer, FlightUrl
 

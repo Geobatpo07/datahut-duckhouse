@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -12,37 +12,25 @@ repos:
       - id: debug-statements
       - id: detect-private-key
 
-  - repo: https://github.com/psf/black
-    rev: 23.12.0
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.9.5
     hooks:
-      - id: black
-        language_version: python3.11
-
-  - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
+      - id: uv-lock
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.8
+    rev: v0.6.9
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
     hooks:
-      - id: mypy
-        additional_dependencies: [types-all]
-        exclude: ^tests/
+      - id: black
+        language_version: python3
 
   - repo: https://github.com/pycqa/bandit
-    rev: 1.7.5
+    rev: 1.8.0
     hooks:
       - id: bandit
-        args: [-r, -x, tests/]
-
-  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
-    rev: v1.3.2
-    hooks:
-      - id: python-safety-dependencies-check
+        exclude: ^(tests/|xorq/)
