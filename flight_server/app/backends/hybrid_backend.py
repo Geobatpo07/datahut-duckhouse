@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Optional, Mapping, Any, Union
 
 import pyarrow as pa
-import xorq as xo
 from xorq.backends.pyiceberg import Backend as PyIcebergBackend
 from xorq.common.utils.logging_utils import get_print_logger
+from xorq.vendor.ibis.backends.duckdb import Backend as DuckDBBackend
 from xorq.vendor.ibis.expr import types as ir
 from xorq.vendor.ibis.expr import schema as sch
 
@@ -53,7 +53,8 @@ class HybridBackend(PyIcebergBackend):
         logger.info(f"Connexion DuckDB → {self.duckdb_path}")
         logger.info(f"Répertoire des snapshots : {self.snapshot_dir}")
 
-        self.duckdb_con = xo.duckdb.connect(self.duckdb_path)
+        self.duckdb_con = DuckDBBackend()
+        self.duckdb_con.do_connect(database=self.duckdb_path)
         self._setup_duckdb_connection()
         self._reflect_views()
         self._create_snapshot()

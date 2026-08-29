@@ -6,78 +6,76 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
-from flight_server.app.backends.hybrid_backend import HybridBackend
+from flight_server.app.backends.hybrid_backend import HybridBackend, PyIcebergBackend
 
 
 class TestHybridBackend:
     """Test HybridBackend class."""
 
-    @patch('flight_server.app.backends.hybrid_backend.xo')
-    @patch('flight_server.app.backends.hybrid_backend.PyIcebergBackend')
-    def test_init_with_warehouse_path(self, mock_parent, mock_xo):
+    @patch('flight_server.app.backends.hybrid_backend.DuckDBBackend')
+    @patch.object(PyIcebergBackend, '__init__', return_value=None)
+    def test_init_with_warehouse_path(self, mock_parent_init, mock_duckdb_backend):
         """Test HybridBackend initialization with warehouse path."""
-        warehouse_path = "s3://test-warehouse/"
-        
-        # Mock parent class
-        mock_parent.__init__ = Mock(return_value=None)
-        
-        # Create instance
-        backend = HybridBackend(warehouse_path=warehouse_path)
-        
-        # Verify parent initialization
-        mock_parent.__init__.assert_called_once()
-        assert backend.duckdb_path is None
-        assert backend.snapshot_dir is None
+        warehouse_path = "/tmp/test-warehouse"
+        mock_duckdb_backend.return_value = Mock()
 
-    @patch('flight_server.app.backends.hybrid_backend.xo')
-    @patch('flight_server.app.backends.hybrid_backend.PyIcebergBackend')
-    def test_init_without_warehouse_path(self, mock_parent, mock_xo):
+        with patch.object(HybridBackend, '_setup_duckdb_connection'), \
+             patch.object(HybridBackend, '_reflect_views'), \
+             patch.object(HybridBackend, '_create_snapshot'), \
+             patch.object(PyIcebergBackend, 'do_connect'):
+            # Create instance
+            backend = HybridBackend(warehouse_path=warehouse_path)
+
+        # Verify parent initialization
+        mock_parent_init.assert_called_once()
+
+    @patch('flight_server.app.backends.hybrid_backend.DuckDBBackend')
+    @patch.object(PyIcebergBackend, '__init__', return_value=None)
+    def test_init_without_warehouse_path(self, mock_parent_init, mock_duckdb_backend):
         """Test HybridBackend initialization without warehouse path."""
-        mock_parent.__init__ = Mock(return_value=None)
-        
         backend = HybridBackend()
-        
-        mock_parent.__init__.assert_called_once()
+
+        mock_parent_init.assert_called_once()
         assert backend.duckdb_path is None
         assert backend.snapshot_dir is None
 
     @patch('flight_server.app.backends.hybrid_backend.shutil')
     @patch('flight_server.app.backends.hybrid_backend.Path')
-    @patch('flight_server.app.backends.hybrid_backend.xo')
-    def test_do_connect(self, mock_xo, mock_path, mock_shutil):
+    @patch('flight_server.app.backends.hybrid_backend.DuckDBBackend')
+    def test_do_connect(self, mock_duckdb_backend, mock_path, mock_shutil):
         """Test do_connect method."""
         # Setup mocks
         mock_path_instance = Mock()
         mock_path_instance.absolute.return_value = mock_path_instance
         mock_path_instance.mkdir = Mock()
         mock_path.return_value = mock_path_instance
-        
+
         mock_connection = Mock()
-        mock_xo.duckdb.connect.return_value = mock_connection
-        
+        mock_duckdb_backend.return_value = mock_connection
+
         # Create backend instance
         backend = HybridBackend()
         backend.do_connect = Mock(wraps=backend.do_connect)
-        
+
         # Mock parent methods
         with patch.object(backend, '_setup_duckdb_connection'), \
              patch.object(backend, '_reflect_views'), \
              patch.object(backend, '_create_snapshot'), \
              patch('flight_server.app.backends.hybrid_backend.PyIcebergBackend.do_connect'):
-            
+
             # Call do_connect
             backend.do_connect(
-                warehouse_path="s3://test-warehouse/",
+                warehouse_path="/tmp/test-warehouse",
                 duckdb_path="/custom/path.duckdb",
                 snapshot_dir="/custom/snapshots",
                 namespace="test",
                 catalog_name="test_catalog"
             )
-            
+
             # Verify setup
             assert backend.duckdb_path == "/custom/path.duckdb"
             mock_path_instance.mkdir.assert_called_once_with(parents=True, exist_ok=True)
-            mock_xo.duckdb.connect.assert_called_once_with("/custom/path.duckdb")
+            mock_duckdb_backend.return_value.do_connect.assert_called_once_with(database="/custom/path.duckdb")
 
     def test_create_table_always_writes_iceberg(self):
         """Per ADR-0001, create_table has no target parameter: every write goes to

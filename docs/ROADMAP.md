@@ -35,11 +35,17 @@ push.
 **Objectif :** un client Flight peut écrire *et relire* des données via
 `HybridBackend`, ce qui n'est le cas d'aucun chemin aujourd'hui.
 
-- [ ] Implémenter `do_get`, `list_flights`, `get_flight_info` sur `HybridBackend`
-- [ ] Rewiring de `app_xorq.py` / `xorq_config.py` pour enregistrer `HybridBackend`
-      comme backend unique du serveur Flight (au lieu de deux backends parallèles)
+- [x] ~~Implémenter `do_get`, `list_flights`, `get_flight_info` sur `HybridBackend`~~ —
+      pas nécessaire : la vraie `FlightServerDelegate` de xorq les fournit déjà
+      génériquement, en délégant à `to_pyarrow_batches`/`create_table`/`insert`/`.tables`
+- [x] Rewiring de `app_xorq.py` / `xorq_config.py` pour enregistrer `HybridBackend`
+      comme backend unique du serveur Flight (via `make_connection=`, l'API réelle —
+      corrigé aussi plusieurs bugs latents : imports cassés contre le vrai package
+      `xorq`, import relatif manquant, `serve()` non-bloquant par défaut)
 - [ ] Test d'intégration : write via Flight → read via Flight → même résultat qu'un
-      accès direct au backend
+      accès direct au backend (partiellement vérifié : le chemin Iceberg est confirmé
+      de bout en bout ; le chemin DuckDB reste à valider hors du sandbox de dev, qui
+      bloque le téléchargement de l'extension `iceberg` de DuckDB)
 
 **Dépendances :** Phase 0.
 **Sortie de phase :** un `docker-compose up` + un client Flight quelconque peut faire un

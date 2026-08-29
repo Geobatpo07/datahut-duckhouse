@@ -125,10 +125,32 @@ bugs going forward.
 
 ## Action Items
 
-1. [ ] Remove `target="duckdb"` branch from `HybridBackend.create_table` / `insert`
-2. [ ] Delete or archive `flight_server/app/app.py` and `query_orchestrator.py`
+1. [x] Remove `target="duckdb"` branch from `HybridBackend.create_table` / `insert`
+2. [x] Delete or archive `flight_server/app/app.py` and `query_orchestrator.py`
        (optionally extract `_analyze_query` as a standalone diagnostic utility)
-3. [ ] Rewire `xorq_config.py` to register `HybridBackend` as the sole backend
-4. [ ] Implement `do_get` / `list_flights` / `get_flight_info` on `HybridBackend`
-5. [ ] Update `docs/CORRECTED_ARCHITECTURE_SUMMARY.md` to reflect the retired routing
+3. [x] Rewire `xorq_config.py` to register `HybridBackend` as the sole backend, via
+       `xorq.flight.FlightServer(make_connection=...)` — this is the real installed
+       API; earlier drafts of this ADR referenced a `registry`/`client=` API that does
+       not exist in the published `xorq` package (see note below)
+4. ~~Implement `do_get` / `list_flights` / `get_flight_info` on `HybridBackend`~~ —
+       **not needed**: the real `xorq.flight.FlightServerDelegate` already implements
+       `do_get`/`do_put`/`get_flight_info` generically, delegating to whatever backend
+       `make_connection` returns via `to_pyarrow_batches`, `create_table`, `insert`, and
+       `.tables` — all of which `HybridBackend` already provides. Verified against the
+       pinned `xorq==0.2.4`.
+5. [x] Update `docs/CORRECTED_ARCHITECTURE_SUMMARY.md` to reflect the retired routing
        layer once the above lands
+
+### Post-implementation note (2026-08-29)
+
+Implementing this ADR surfaced that the published `xorq` package's real API differs
+substantially from what earlier code (and earlier drafts of this ADR) assumed:
+no `xorq.registry` module, no `xorq.duckdb.connect`, `FlightServer` takes
+`make_connection=`, not `client=`. These were invisible because the test suite mocked
+`xo`/`xorq` entirely rather than exercising the real package. Fixed in
+`hybrid_backend.py`, `xorq_config.py`, `app_xorq.py`, and `utils.py`; tests updated to
+mock at the correct import boundary instead of the defining module. Still open: the
+Iceberg `warehouse_path` the real backend expects is a local filesystem path, not an
+`s3://` URI — the MinIO/S3 wiring implied by `ICEBERG_WAREHOUSE` and
+`get_s3_filesystem()` in `utils.py` is not yet connected to `HybridBackend`. Tracked as a
+follow-up, not resolved by this ADR.

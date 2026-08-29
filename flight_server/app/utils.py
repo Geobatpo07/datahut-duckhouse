@@ -7,10 +7,9 @@ import s3fs
 from dotenv import load_dotenv
 from pyiceberg.catalog import load_catalog
 
-import xorq as xo
 from xorq.flight.client import FlightClient
 from xorq.vendor.ibis.backends.duckdb import Backend as DuckDBBackend
-from xorq.vendor.ibis.backends.pyiceberg import Backend as IcebergBackend
+from xorq.backends.pyiceberg import Backend as IcebergBackend
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -88,32 +87,43 @@ def get_flight_client() -> FlightClient:
     """Create and return a Flight client instance."""
     try:
         host = os.getenv("FLIGHT_SERVER_HOST", "localhost")
-        port = os.getenv("FLIGHT_SERVER_PORT", "8815")
-        endpoint = f"grpc://{host}:{port}"
-        logger.info(f"Creating Flight client for endpoint: {endpoint}")
-        return FlightClient(endpoint)
+        port = int(os.getenv("FLIGHT_SERVER_PORT", "8815"))
+        logger.info(f"Creating Flight client for {host}:{port}")
+        return FlightClient(host=host, port=port)
     except Exception as e:
         logger.error(f"Failed to create Flight client: {e}")
         raise
 
 def get_duckdb_backend() -> DuckDBBackend:
-    """Create and return a DuckDB backend instance."""
+    """Create and return a connected DuckDB backend instance."""
     try:
-        return DuckDBBackend(duckdb_path=get_duckdb_path())
+        backend = DuckDBBackend()
+        backend.do_connect(database=get_duckdb_path())
+        return backend
     except Exception as e:
         logger.error(f"Failed to create DuckDB backend: {e}")
         raise
 
 def get_iceberg_backend() -> IcebergBackend:
-    """Create and return an Iceberg backend instance."""
+    """
+    Create and return a connected Iceberg backend instance.
+
+    Note: `warehouse_path` here is a local filesystem path, matching what
+    `IcebergBackend.do_connect` actually accepts in the installed xorq
+    version — it is not yet wired to MinIO/S3 (`get_s3_filesystem` /
+    `ICEBERG_WAREHOUSE` above target a different, unconnected code path).
+    """
     try:
-        return IcebergBackend(
-            catalog_name=os.getenv("ICEBERG_CATALOG", "minio_catalog"),
-            warehouse=get_iceberg_warehouse_path(),
-            endpoint=os.getenv("S3_ENDPOINT", "http://localhost:9000"),
-            access_key=os.getenv("AWS_ACCESS_KEY_ID", "minioadmin"),
-            secret_key=os.getenv("AWS_SECRET_ACCESS_KEY", "minioadmin123"),
+        backend = IcebergBackend()
+        backend.do_connect(
+            warehouse_path=os.getenv(
+                "ICEBERG_WAREHOUSE_PATH",
+                os.path.join(os.getcwd(), "data", "iceberg_warehouse"),
+            ),
+            namespace=get_iceberg_namespace(),
+            catalog_name=os.getenv("ICEBERG_CATALOG", "default"),
         )
+        return backend
     except Exception as e:
         logger.error(f"Failed to create Iceberg backend: {e}")
         raise

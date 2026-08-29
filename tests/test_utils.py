@@ -85,29 +85,29 @@ class TestS3Utils:
 class TestFlightUtils:
     """Test Arrow Flight utility functions."""
 
-    @patch('xorq.flight.client.FlightClient')
+    @patch('flight_server.app.utils.FlightClient')
     def test_get_flight_client_default(self, mock_client_class):
         """Test get_flight_client with default host and port."""
         mock_client = Mock()
         mock_client_class.return_value = mock_client
-        
+
         with patch.dict(os.environ, {}, clear=True):
             result = get_flight_client()
-            
-        mock_client_class.assert_called_once_with("grpc://localhost:8815")
+
+        mock_client_class.assert_called_once_with(host="localhost", port=8815)
         assert result == mock_client
 
-    @patch('xorq.flight.client.FlightClient')
+    @patch('flight_server.app.utils.FlightClient')
     def test_get_flight_client_custom(self, mock_client_class):
         """Test get_flight_client with custom host and port."""
         mock_client = Mock()
         mock_client_class.return_value = mock_client
-        
+
         with patch.dict(os.environ, {
             'FLIGHT_SERVER_HOST': 'custom-host',
             'FLIGHT_SERVER_PORT': '9999'
         }):
             result = get_flight_client()
-            
-        mock_client_class.assert_called_once_with("grpc://custom-host:9999")
+
+        mock_client_class.assert_called_once_with(host="custom-host", port=9999)
         assert result == mock_client

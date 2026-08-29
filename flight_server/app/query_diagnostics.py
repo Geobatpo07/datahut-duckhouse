@@ -53,8 +53,9 @@ def analyze_query(query: str) -> QueryMetrics:
     aggregation_keywords = ['group by', 'having', 'count(', 'sum(', 'avg(', 'max(', 'min(']
     metrics.has_aggregations = any(keyword in query_lower for keyword in aggregation_keywords)
 
-    # Check for subqueries
-    metrics.has_subqueries = '(' in query and 'select' in query_lower
+    # Check for subqueries: an opening paren directly followed by SELECT,
+    # not just any parenthesized expression (e.g. COUNT(*) is not a subquery)
+    metrics.has_subqueries = bool(re.search(r'\(\s*select\b', query_lower))
 
     # Calculate complexity score
     complexity_score = 0.0
