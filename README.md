@@ -94,10 +94,37 @@ Place a CSV file in ingestion/data/data.csv then run:
 poetry run python scripts/ingest_flight.py
 ```
 
+## 🖥️ CLI (`dhd`)
+
+Phase 2 de `docs/ROADMAP.md` : un CLI qui exerce le chemin Flight complet
+contre `HybridBackend` (create/insert écrivent dans Iceberg, ADR-0001).
+Pas encore de notion de tenant — volontairement, voir la roadmap.
+
+```bash
+poetry install   # installe l'entrypoint `dhd`
+
+dhd create-table my_table ingestion/data/data.csv
+dhd insert my_table ingestion/data/more_data.csv
+dhd query "SELECT * FROM my_table" --limit 10
+dhd list-tables
+
+# Pas encore actif (Nessie, ADR-0002 — Phase 3 de la roadmap) :
+dhd branch create my-branch
+```
+
+Se connecte via `FLIGHT_SERVER_HOST`/`FLIGHT_SERVER_PORT` (mêmes variables
+que le reste du projet). `query`/`list-tables` n'ont pas encore été validés
+contre un serveur réel en dehors de leurs tests unitaires (voir
+`tests/test_cli.py`) — le chemin d'écriture Iceberg, lui, a été vérifié en
+conditions réelles.
+
 ## 📂 Project Structure
 
 ```
 datahut-duckhouse/
+├── datahut_duckhouse/    # CLI (dhd) — Phase 2
+│   ├── cli.py
+│   └── connection.py
 ├── flight_server/        # Arrow Flight Server + HybridBackend
 │   ├── app/
 │      ├── app_xorq.py
@@ -115,6 +142,8 @@ datahut-duckhouse/
 │   ├── trino/etc/
 │   ├── tenants/
 │   └── users/users.yamlx
+├── docs/adr/             # Architecture Decision Records
+├── docs/ROADMAP.md        # Roadmap détaillée et à jour
 ├── .env                  # Environment variables
 ├── docker-compose.yml
 └── pyproject.toml
@@ -147,12 +176,16 @@ Use `tenant_acme` as the Trino catalog in Superset or Metabase.
 
 ## 🛣️ Roadmap
 
-- ✅ Multi-tenant Iceberg + DuckDB
-- ✅ Dynamic registration with Xorq + Trino
-- 🔜 Flask/React management interface
-- 🔜 User authentication + role management
-- 🔜 Integration with Metabase or Superset
-- 🔜 SaaS deployment on public cloud
+Voir [`docs/ROADMAP.md`](docs/ROADMAP.md) pour la roadmap détaillée et à jour
+(séquencement CLI-first, puis multi-tenant derrière un point de bascule
+explicite). Statut résumé :
+
+- ✅ Phase 0-1 : backend hybride canonique, Iceberg comme unique source de
+  vérité (ADR-0001)
+- 🚧 Phase 2 : CLI (`dhd`) — en cours
+- 🔜 Phase 3-5 : Nessie, Postgres, dogfooding
+- 🔜 Phase 6+ : multi-tenant (isolation, auth, quotas) — conditionné à un
+  vrai signal de bascule, pas une date
 
 ## 📄 License
 

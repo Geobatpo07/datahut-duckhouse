@@ -53,18 +53,22 @@ aller-retour complet sur une table.
 
 ---
 
-## Phase 2 — CLI
+## Phase 2 — CLI 🚧 En cours
 
 **Objectif :** un outil en ligne de commande qui exerce le chemin Flight complet,
 utilisable pour un usage réel (toi, AYITISTATS) sans notion de tenant.
 
-- [ ] `dhd create-table <name> <source>`
-- [ ] `dhd insert <table> <source> [--mode append|overwrite]`
-- [ ] `dhd query <sql>` — lecture via les vues DuckDB reflétées
-- [ ] `dhd list-tables`
-- [ ] `dhd branch <create|list|switch>` — expose le modèle Nessie (voir Phase 3) une
-      fois disponible ; jusque-là, no-op documenté ou message clair "pas encore actif"
-- [ ] Distribution simple : `poetry install` + entrypoint, pas encore de packaging PyPI
+- [x] `dhd create-table <name> <source>`
+- [x] `dhd insert <table> <source>` — envoie le même appel que `create-table` côté
+      client ; c'est le serveur qui décide création vs ajout (voir docstring de la
+      commande)
+- [x] `dhd query <sql>` — lecture via les vues DuckDB reflétées (chemin non encore
+      validé contre un serveur réel, seulement testé unitairement)
+- [x] `dhd list-tables`
+- [x] `dhd branch <create|list|switch>` — stub explicite ("pas encore actif"), le
+      modèle Nessie n'est pas encore câblé (Phase 3)
+- [x] Distribution simple : `poetry install` + entrypoint `dhd`, pas encore de
+      packaging PyPI
 
 **Dépendances :** Phase 1.
 **Sortie de phase :** tu peux ingérer et interroger des données réelles (AYITISTATS,
