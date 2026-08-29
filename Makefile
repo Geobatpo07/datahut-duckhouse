@@ -125,8 +125,8 @@ validate-env: ## Validate environment configuration
 demo-architecture: ## Demonstrate the corrected architecture
 	poetry run python scripts/demonstrate_architecture.py
 
-query-orchestrator: ## Test the query orchestrator (usage: make query-orchestrator QUERY="SELECT COUNT(*) FROM local_patients")
-	poetry run python -c "from flight_server.app.query_orchestrator import get_query_orchestrator; o = get_query_orchestrator(); print(o.execute_query('$(QUERY)')); o.close()"
+query-diagnostics: ## Analyze a query's shape/complexity, diagnostic only (usage: make query-diagnostics QUERY="SELECT COUNT(*) FROM local_patients")
+	poetry run python -c "from flight_server.app.query_diagnostics import analyze_query; print(analyze_query('$(QUERY)'))"
 
 dev-server: ## Start development server
 	poetry run python -m flight_server.app.app_xorq

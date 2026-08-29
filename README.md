@@ -18,7 +18,7 @@
                          v
           +--------------+---------------+
           |   Arrow Flight Server        |
-          |     (Xorq + app.py)          |
+          |   (Xorq + app_xorq.py)       |
           | - hybrid backend: Iceberg + DuckDB
           | - snapshots, synchronized views
           +--------------+---------------+
@@ -100,7 +100,6 @@ poetry run python scripts/ingest_flight.py
 datahut-duckhouse/
 ├── flight_server/        # Arrow Flight Server + HybridBackend
 │   ├── app/
-│      ├── app.py
 │      ├── app_xorq.py
 │      ├── xorq_config.py
 │      ├── utils.py

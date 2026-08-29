@@ -79,101 +79,39 @@ class TestHybridBackend:
             mock_path_instance.mkdir.assert_called_once_with(parents=True, exist_ok=True)
             mock_xo.duckdb.connect.assert_called_once_with("/custom/path.duckdb")
 
-    def test_create_table_duckdb(self):
-        """Test create_table method with duckdb target."""
+    def test_create_table_always_writes_iceberg(self):
+        """Per ADR-0001, create_table has no target parameter: every write goes to
+        Iceberg unconditionally, DuckDB never receives a durable table directly."""
         backend = HybridBackend()
-        backend.duckdb_con = Mock()
         backend._reflect_views = Mock()
         backend._create_snapshot = Mock()
-        
-        # Test successful creation
-        backend.duckdb_con.create_table.return_value = True
-        
-        result = backend.create_table("test_table", "test_data", target="duckdb")
-        
-        backend.duckdb_con.create_table.assert_called_once_with("test_table", "test_data")
-        backend._reflect_views.assert_called_once()
-        backend._create_snapshot.assert_called_once()
-        assert result is True
 
-    def test_create_table_duckdb_fallback_to_insert(self):
-        """Test create_table method with duckdb target falling back to insert."""
-        backend = HybridBackend()
-        backend.duckdb_con = Mock()
-        backend._reflect_views = Mock()
-        backend._create_snapshot = Mock()
-        
-        # Test fallback to insert
-        backend.duckdb_con.create_table.side_effect = Exception("Table exists")
-        backend.duckdb_con.insert.return_value = True
-        
-        result = backend.create_table("test_table", "test_data", target="duckdb")
-        
-        backend.duckdb_con.create_table.assert_called_once_with("test_table", "test_data")
-        backend.duckdb_con.insert.assert_called_once_with("test_table", "test_data")
-        assert result is True
-
-    def test_create_table_iceberg(self):
-        """Test create_table method with iceberg target."""
-        backend = HybridBackend()
-        backend._reflect_views = Mock()
-        backend._create_snapshot = Mock()
-        
         with patch('flight_server.app.backends.hybrid_backend.PyIcebergBackend.create_table') as mock_parent:
             mock_parent.return_value = True
-            
-            result = backend.create_table("test_table", "test_data", target="iceberg")
-            
+
+            result = backend.create_table("test_table", "test_data")
+
             mock_parent.assert_called_once_with("test_table", "test_data")
             backend._reflect_views.assert_called_once()
             backend._create_snapshot.assert_called_once()
             assert result is True
 
-    def test_create_table_invalid_target(self):
-        """Test create_table method with invalid target."""
-        backend = HybridBackend()
-        
-        with pytest.raises(ValueError, match="Le paramètre 'target' doit être 'duckdb' ou 'iceberg'"):
-            backend.create_table("test_table", "test_data", target="invalid")
-
-    def test_insert_duckdb(self):
-        """Test insert method with duckdb target."""
-        backend = HybridBackend()
-        backend.duckdb_con = Mock()
-        backend._reflect_views = Mock()
-        backend._create_snapshot = Mock()
-        
-        backend.duckdb_con.insert.return_value = True
-        
-        result = backend.insert("test_table", "test_data", target="duckdb")
-        
-        backend.duckdb_con.insert.assert_called_once_with("test_table", "test_data")
-        backend._reflect_views.assert_called_once()
-        backend._create_snapshot.assert_called_once()
-        assert result is True
-
-    def test_insert_iceberg(self):
-        """Test insert method with iceberg target."""
+    def test_insert_always_writes_iceberg(self):
+        """Per ADR-0001, insert has no target parameter: every write goes to Iceberg
+        unconditionally."""
         backend = HybridBackend()
         backend._reflect_views = Mock()
         backend._create_snapshot = Mock()
-        
+
         with patch('flight_server.app.backends.hybrid_backend.PyIcebergBackend.insert') as mock_parent:
             mock_parent.return_value = True
-            
-            result = backend.insert("test_table", "test_data", target="iceberg", mode="append")
-            
+
+            result = backend.insert("test_table", "test_data", mode="append")
+
             mock_parent.assert_called_once_with("test_table", "test_data", mode="append")
             backend._reflect_views.assert_called_once()
             backend._create_snapshot.assert_called_once()
             assert result is True
-
-    def test_insert_invalid_target(self):
-        """Test insert method with invalid target."""
-        backend = HybridBackend()
-        
-        with pytest.raises(ValueError, match="Le paramètre 'target' doit être 'duckdb' ou 'iceberg'"):
-            backend.insert("test_table", "test_data", target="invalid")
 
     def test_reflect_views(self):
         """Test _reflect_views method."""

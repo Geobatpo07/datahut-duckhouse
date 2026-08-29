@@ -58,33 +58,27 @@ class HybridBackend(PyIcebergBackend):
         self._reflect_views()
         self._create_snapshot()
 
-    def create_table(self, table_name: str, data, target: str = "", **kwargs) -> bool:
-        logger.info(f"Création de la table '{table_name}' dans {target.upper()}")
-        result = None
-
-        if target == "iceberg":
-            result = super().create_table(table_name, data, **kwargs)
-        elif target == "duckdb":
-            try:
-                result = self.duckdb_con.create_table(table_name, data)
-            except:
-                result = self.duckdb_con.insert(table_name, data)
-        else:
-            raise ValueError("Le paramètre 'target' doit être 'duckdb' ou 'iceberg'")
+    def create_table(self, table_name: str, data, **kwargs) -> bool:
+        """
+        Crée une table. Iceberg est l'unique cible de persistance (voir ADR-0001) :
+        DuckDB ne fait jamais que refléter les tables Iceberg via des vues
+        (`_reflect_views`), il ne stocke jamais de données de façon durable.
+        """
+        logger.info(f"Création de la table '{table_name}' dans ICEBERG")
+        result = super().create_table(table_name, data, **kwargs)
 
         self._reflect_views()
         self._create_snapshot()
         return result
 
-    def insert(self, table_name: str, data, target: str = "", mode: str = "append", **kwargs) -> bool:
-        logger.info(f"Insertion dans '{table_name}' [{target.upper()}]")
-
-        if target == "iceberg":
-            result = super().insert(table_name, data, mode=mode)
-        elif target == "duckdb":
-            result = self.duckdb_con.insert(table_name, data)
-        else:
-            raise ValueError("Le paramètre 'target' doit être 'duckdb' ou 'iceberg'")
+    def insert(self, table_name: str, data, mode: str = "append", **kwargs) -> bool:
+        """
+        Insère des données. Iceberg est l'unique cible de persistance (voir ADR-0001).
+        Un besoin réel de stockage éphémère doit passer par un connecteur séparé,
+        explicitement nommé comme tel — jamais par une branche silencieuse ici.
+        """
+        logger.info(f"Insertion dans '{table_name}' [ICEBERG]")
+        result = super().insert(table_name, data, mode=mode)
 
         self._reflect_views()
         self._create_snapshot()

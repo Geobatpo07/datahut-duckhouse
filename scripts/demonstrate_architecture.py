@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Demonstrate the corrected DataHut-DuckHouse architecture:
+Demonstrate the DataHut-DuckHouse architecture (see docs/adr/):
 - DuckDB for local, lightweight queries
 - Trino for distributed queries on Iceberg tables
-- Xorq orchestrating the process via Flight server
+- HybridBackend: Iceberg as sole write target, DuckDB views reflecting it (ADR-0001)
 """
 import os
 import sys
@@ -14,7 +14,6 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from flight_server.app.query_orchestrator import get_query_orchestrator
 from flight_server.app.trino_client import get_trino_client
 from flight_server.app.utils import get_duckdb_connection
 
@@ -116,88 +115,18 @@ def demonstrate_trino_queries():
         logger.error(f"Trino demonstration failed: {e}")
 
 
-def demonstrate_orchestration():
-    """Demonstrate query orchestration between DuckDB and Trino."""
+def demonstrate_hybrid_backend():
+    """
+    Placeholder for a demo of the canonical HybridBackend (ADR-0001): Iceberg as the
+    sole write target, DuckDB views reflecting Iceberg via `_reflect_views`. Write once
+    the Flight server is rewired to register HybridBackend as its sole backend
+    (ADR-0001, action items 3-4).
+    """
     print("\\n" + "="*60)
-    print("🎯 Query Orchestration: Smart Routing")
+    print("🧊 HybridBackend: Iceberg-only writes, DuckDB views (ADR-0001)")
     print("="*60)
-    
-    try:
-        orchestrator = get_query_orchestrator()
-        
-        # Test queries that should go to different backends
-        test_queries = [
-            {
-                "query": "SELECT COUNT(*) FROM local_patients",
-                "expected_backend": "DuckDB",
-                "reason": "Local table"
-            },
-            {
-                "query": "SELECT COUNT(*) FROM patient_data", 
-                "expected_backend": "Trino",
-                "reason": "Iceberg table"
-            },
-            {
-                "query": "SELECT disease, COUNT(*) FROM local_patients GROUP BY disease",
-                "expected_backend": "DuckDB", 
-                "reason": "Simple aggregation on local data"
-            },
-            {
-                "query": "SELECT disease, AVG(CAST(JSON_EXTRACT_SCALAR(demographics, '$.age') AS INTEGER)) FROM patient_data GROUP BY disease",
-                "expected_backend": "Trino",
-                "reason": "Complex query on large dataset"
-            }
-        ]
-        
-        for test in test_queries:
-            print(f"\\n🔍 Testing query: {test['query'][:50]}...")
-            print(f"📝 Expected: {test['expected_backend']} ({test['reason']})")
-            
-            try:
-                # This will log which backend was chosen
-                result = orchestrator.execute_query(test['query'])
-                print(f"✅ Query executed successfully, returned {len(result)} rows")
-                
-            except Exception as e:
-                print(f"❌ Query failed: {e}")
-        
-        # List tables from both backends
-        print("\\n📋 Available tables:")
-        tables = orchestrator.list_tables()
-        print(f"  DuckDB: {tables['duckdb']}")
-        print(f"  Iceberg: {tables['iceberg']}")
-        
-        orchestrator.close()
-        
-    except Exception as e:
-        logger.error(f"Orchestration demonstration failed: {e}")
-
-
-def demonstrate_data_routing():
-    """Demonstrate data routing based on size."""
-    print("\\n" + "="*60)
-    print("📊 Data Routing: Size-Based Backend Selection")
-    print("="*60)
-    
-    print("🔄 Data Routing Logic:")
-    print("  • Small datasets (< 100k rows) → DuckDB (local, fast)")
-    print("  • Large datasets (> 100k rows) → Iceberg (distributed, scalable)")
-    print("  • Complex queries → Trino (distributed processing)")
-    print("  • Simple queries → DuckDB (local processing)")
-    
-    print("\\n📋 Table Registry:")
-    orchestrator = get_query_orchestrator()
-    
-    duckdb_tables = [k for k, v in orchestrator.table_registry.items() if v.value == 'duckdb']
-    iceberg_tables = [k for k, v in orchestrator.table_registry.items() if v.value == 'iceberg']
-    
-    print(f"  DuckDB Tables: {duckdb_tables}")
-    print(f"  Iceberg Tables: {iceberg_tables}")
-    
-    print("\\n🎯 Query Routing Thresholds:")
-    print(f"  • Row threshold: {orchestrator.row_threshold:,} rows")
-    print(f"  • Complexity threshold: {orchestrator.complexity_threshold}")
-    print(f"  • Join threshold: {orchestrator.join_threshold} tables")
+    print("  Not yet demonstrated here — pending Flight server rewiring")
+    print("  (see docs/adr/0001-canonical-hybrid-backend.md, action items 3-4).")
 
 
 def main():
@@ -213,8 +142,7 @@ def main():
     # Demonstrate each component
     demonstrate_duckdb_queries()
     demonstrate_trino_queries()
-    demonstrate_orchestration()
-    demonstrate_data_routing()
+    demonstrate_hybrid_backend()
     
     print("\\n" + "="*60)
     print("✅ Architecture demonstration completed!")
