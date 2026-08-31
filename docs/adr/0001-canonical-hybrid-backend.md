@@ -175,6 +175,11 @@ environment where MinIO can actually be reached (this sandbox cannot run the
 `docker-compose` stack). See `docs/PROMPT_VALIDATION_PHASE1_2.md` for the validation
 checklist this feeds into.
 
-Still open, unrelated to this update: `scripts/ingest_flight.py` and `scripts/pipeline.py`
+Still open, unrelated to this update: ~~`scripts/ingest_flight.py` and `scripts/pipeline.py`
 still reference the `target=` parameter removed earlier by this same ADR — they predate
-that change and are now broken. Not fixed here; flagged for a separate pass.
+that change and are now broken.~~ **Fixed** (2026-08-31, same day): both rewritten to use
+`datahut_duckhouse.connection.get_connection()` — the same verified path the CLI uses —
+instead of hand-rolling the Flight protocol. `pipeline.py` had a deeper, independent bug:
+it built a `FlightDescriptor.for_path(...)`, but the real server's `do_put`
+(`FlightServerDelegate`) only parses a `for_command(...)`-style descriptor; it could
+never have worked against the real server, `target=` aside. See `tests/test_scripts.py`.

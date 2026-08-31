@@ -93,6 +93,8 @@ def main():
         "tests/test_trino_client.py",
         "tests/test_query_diagnostics.py",
         "scripts/ingest_flight.py",
+        "scripts/pipeline.py",
+        "tests/test_scripts.py",
         "scripts/create_tenant.py",
         "scripts/delete_tenant.py",
         "scripts/query_trino.py",

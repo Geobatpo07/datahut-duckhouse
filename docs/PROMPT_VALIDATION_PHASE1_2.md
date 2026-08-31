@@ -134,11 +134,15 @@ problèmes déjà tranchés ou déjà corrigés.
   complexe (retry, thread avec timeout) sans validation — un simple
   message clair dans le README suffit pour l'instant si le problème se
   confirme.
-- **`scripts/ingest_flight.py` et `scripts/pipeline.py` sont cassés** : ils
-  utilisent encore le paramètre `target=` supprimé par l'ADR-0001 (l'ancien
-  choix DuckDB/Iceberg explicite côté client, qui n'existe plus — c'est
-  maintenant le serveur qui décide). Pas corrigé dans cette tâche non plus ;
-  à traiter séparément si ces scripts sont encore utilisés.
+- ~~**`scripts/ingest_flight.py` et `scripts/pipeline.py` sont cassés**~~ **Corrigé**
+  (2026-08-31) : réécrits contre `datahut_duckhouse.connection.get_connection()`, le
+  même chemin vérifié que le CLI. `pipeline.py` avait un bug plus profond qu'un simple
+  `target=` obsolète : il construisait un `FlightDescriptor.for_path(...)` que le vrai
+  `do_put` du serveur ne sait pas parser (il attend un descripteur `for_command(...)`) —
+  il n'aurait jamais fonctionné contre le vrai serveur. Voir `tests/test_scripts.py`.
+  **Non vérifié** : ces deux scripts n'ont été testés qu'avec la connexion mockée, pas
+  contre un vrai serveur Flight — à couvrir par l'étape 4 ci-dessus si le temps le
+  permet.
 
 ## Ce qu'il ne faut PAS faire dans cette tâche
 

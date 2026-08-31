@@ -1,27 +1,32 @@
 import os
+import sys
 import pyarrow as pa
 import pyarrow.csv as csv
-import pyarrow.flight as flight
 import duckdb
 import subprocess
 from dotenv import load_dotenv
+
+# Réutilise la connexion Flight déjà vérifiée du CLI plutôt que de construire
+# un FlightDescriptor à la main : le do_put réel du serveur attend un
+# descripteur de type "command" (voir FlightServerDelegate.do_put dans le
+# package xorq), pas for_path(...) -- ce script ne pouvait pas fonctionner
+# contre le vrai serveur avant cette correction, indépendamment du paramètre
+# `target` retiré par ADR-0001.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from datahut_duckhouse.connection import get_connection
 
 # Charger les variables d'environnement depuis .env
 load_dotenv()
 
 # Paramètres de configuration
-FLIGHT_SERVER_HOST = os.getenv("FLIGHT_SERVER_HOST", "localhost")
-FLIGHT_SERVER_PORT = os.getenv("FLIGHT_SERVER_PORT", "8815")
 TABLE_NAME = os.getenv("FLIGHT_TABLE_NAME", "diseases")
 CSV_PATH = os.getenv("CSV_PATH", "ingestion/data/data.csv")
-FLIGHT_TARGET = os.getenv("FLIGHT_TARGET", "duckdb")
 DUCKDB_PATH = os.getenv("DUCKDB_PATH", "ingestion/data/duckhouse.duckdb")
 DBT_PROJECT_PATH = "transform/dbt_project"
 DBT_PROFILES_DIR = f"{DBT_PROJECT_PATH}/config"
 
 def ingest_data():
     print("Étape 1 : Envoi des données au serveur Arrow Flight...")
-    client = flight.FlightClient(f"grpc://{FLIGHT_SERVER_HOST}:{FLIGHT_SERVER_PORT}")
 
     if not os.path.exists(CSV_PATH):
         raise FileNotFoundError(f"Fichier CSV introuvable : {CSV_PATH}")
@@ -29,13 +34,11 @@ def ingest_data():
     with open(CSV_PATH, "rb") as f:
         table = csv.read_csv(f)
 
-    descriptor = flight.FlightDescriptor.for_path(TABLE_NAME)
-    options = flight.FlightCallOptions(headers=[("target", FLIGHT_TARGET)])
-
-    writer, _ = client.do_put(descriptor, table.schema, options=options)
-    writer.write_table(table)
-    writer.done_writing()
-    print(f"Données envoyées vers '{TABLE_NAME}' ({table.num_rows} lignes) dans {FLIGHT_TARGET.upper()}")
+    con = get_connection()
+    # create_table et insert envoient le même appel côté client ; c'est le
+    # serveur qui décide création vs ajout selon que la table existe déjà.
+    con.create_table(TABLE_NAME, table)
+    print(f"Données envoyées vers '{TABLE_NAME}' ({table.num_rows} lignes) dans Iceberg")
 
 def run_dbt():
     print("Étape 2 : Exécution des transformations dbt...")
@@ -69,9 +72,9 @@ def query_results():
         print(f"Impossible de lire 'mart_rev_metrics' : {e}")
 
 if __name__ == "__main__":
+    # Iceberg est l'unique cible de persistance (ADR-0001) : plus de branche
+    # "si target == duckdb" -- dbt tourne systématiquement sur les vues
+    # DuckDB qui reflètent Iceberg.
     ingest_data()
-    if FLIGHT_TARGET.lower() == "duckdb":
-        run_dbt()
-        query_results()
-    else:
-        print("Données envoyées dans Iceberg : dbt/queries ignorées.")
+    run_dbt()
+    query_results()
