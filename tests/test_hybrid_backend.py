@@ -165,6 +165,112 @@ class TestHybridBackend:
         for cmd in expected_commands:
             backend.duckdb_con.raw_sql.assert_any_call(cmd)
 
+    def test_setup_duckdb_connection_s3(self):
+        """_setup_duckdb_connection configures httpfs + S3 credentials when the
+        warehouse lives on MinIO/S3 (see _connect_s3_iceberg)."""
+        backend = HybridBackend()
+        backend.duckdb_con = Mock()
+        backend._s3_config = {
+            "endpoint": "http://localhost:9000",
+            "access_key": "minioadmin",
+            "secret_key": "minioadmin123",
+            "force_virtual_addressing": False,
+        }
+
+        backend._setup_duckdb_connection()
+
+        commands = [c.args[0] for c in backend.duckdb_con.raw_sql.call_args_list]
+        assert "INSTALL httpfs;" in commands
+        assert "LOAD httpfs;" in commands
+        assert "SET s3_endpoint='localhost:9000';" in commands
+        assert "SET s3_access_key_id='minioadmin';" in commands
+        assert "SET s3_secret_access_key='minioadmin123';" in commands
+        assert "SET s3_url_style='path';" in commands
+        assert "SET s3_use_ssl=false;" in commands
+        assert "INSTALL iceberg;" in commands
+
+
+class TestIsS3Path:
+    """_is_s3_path decides whether HybridBackend routes to the local or the
+    MinIO/S3 connection path in do_connect."""
+
+    @pytest.mark.parametrize("path,expected", [
+        ("s3://bucket/warehouse", True),
+        ("s3a://bucket/warehouse", True),
+        ("/tmp/local/warehouse", False),
+        ("data/iceberg_warehouse", False),
+        ("", False),
+    ])
+    def test_is_s3_path(self, path, expected):
+        assert HybridBackend._is_s3_path(path) is expected
+
+
+class TestConnectS3Iceberg:
+    """_connect_s3_iceberg builds the Iceberg catalog for a MinIO/S3 warehouse,
+    bypassing the real xorq PyIcebergBackend.do_connect (which only supports a
+    local filesystem warehouse -- see ADR-0001's post-implementation note)."""
+
+    def test_connect_s3_iceberg_sets_expected_attributes(self, tmp_path):
+        backend = HybridBackend.__new__(HybridBackend)
+
+        with patch.dict(os.environ, {"ICEBERG_CATALOG_METADATA_DIR": str(tmp_path / "catalog")}):
+            backend._connect_s3_iceberg(
+                warehouse_path="s3://duckhouse-warehouse/",
+                namespace="default",
+                catalog_name="test_catalog",
+                catalog_type="sql",
+                catalog_uri=None,
+                s3_endpoint="http://localhost:9000",
+                s3_access_key="minioadmin",
+                s3_secret_key="minioadmin123",
+                s3_force_virtual_addressing=False,
+            )
+
+        # Trailing slash stripped, matches the raw s3:// scheme (no rewrite to file://)
+        assert backend.warehouse_path == "s3://duckhouse-warehouse"
+        assert backend.namespace == "default"
+        assert backend.catalog_params["warehouse"] == "s3://duckhouse-warehouse"
+        assert backend.catalog_params["s3.endpoint"] == "http://localhost:9000"
+        assert backend.catalog_params["s3.access-key-id"] == "minioadmin"
+        assert backend.catalog_params["s3.force-virtual-addressing"] == "false"
+        assert backend._s3_config["endpoint"] == "http://localhost:9000"
+        # Catalog metadata stays local (SQLite) even though table data targets S3
+        assert backend.catalog_params["uri"].startswith("sqlite:///")
+        # Namespace was actually created against the real pyiceberg catalog
+        assert ("default",) in backend.catalog.list_namespaces()
+
+    def test_do_connect_routes_s3_warehouse_to_connect_s3_iceberg(self):
+        """do_connect must detect an s3:// warehouse_path and call
+        _connect_s3_iceberg instead of the parent's local-only do_connect."""
+        backend = HybridBackend.__new__(HybridBackend)
+        backend._connect_s3_iceberg = Mock()
+        backend._setup_duckdb_connection = Mock()
+        backend._reflect_views = Mock()
+        backend._create_snapshot = Mock()
+
+        with patch('flight_server.app.backends.hybrid_backend.DuckDBBackend'), \
+             patch.object(PyIcebergBackend, 'do_connect') as mock_parent_do_connect:
+            backend.do_connect(warehouse_path="s3://duckhouse-warehouse/")
+
+        backend._connect_s3_iceberg.assert_called_once()
+        mock_parent_do_connect.assert_not_called()
+
+    def test_do_connect_routes_local_warehouse_to_parent(self):
+        """A plain local path must still go through the parent's do_connect,
+        unaffected by the S3 branch."""
+        backend = HybridBackend.__new__(HybridBackend)
+        backend._connect_s3_iceberg = Mock()
+        backend._setup_duckdb_connection = Mock()
+        backend._reflect_views = Mock()
+        backend._create_snapshot = Mock()
+
+        with patch('flight_server.app.backends.hybrid_backend.DuckDBBackend'), \
+             patch.object(PyIcebergBackend, 'do_connect') as mock_parent_do_connect:
+            backend.do_connect(warehouse_path="/tmp/local-warehouse")
+
+        mock_parent_do_connect.assert_called_once()
+        backend._connect_s3_iceberg.assert_not_called()
+
     @patch('flight_server.app.backends.hybrid_backend.shutil')
     @patch('flight_server.app.backends.hybrid_backend.datetime')
     def test_create_snapshot(self, mock_datetime, mock_shutil):

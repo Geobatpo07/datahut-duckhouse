@@ -61,13 +61,32 @@ def get_s3_filesystem() -> s3fs.S3FileSystem:
 # --------------- Iceberg
 
 def get_iceberg_catalog():
-    """Create and return an Iceberg catalog instance."""
+    """Create and return an Iceberg catalog instance (MinIO/S3-backed).
+
+    Utilise les clés de propriété réelles de pyiceberg (`s3.endpoint`,
+    `s3.access-key-id`, `s3.secret-access-key`) plutôt qu'un objet `s3fs`
+    imbriqué, qui n'est pas un format reconnu par `load_catalog`. Le
+    catalogue lui-même (métadonnées) reste dans un fichier SQLite local ;
+    seules les données des tables vont sur MinIO — même approche que
+    `HybridBackend._connect_s3_iceberg` (voir `backends/hybrid_backend.py`,
+    ADR-0001).
+    """
     try:
+        aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", "minioadmin")
+        aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "minioadmin123")
+        metadata_dir = os.path.join(os.getcwd(), "data", "iceberg_catalog")
+        os.makedirs(metadata_dir, exist_ok=True)
         return load_catalog(
-            name=os.getenv("ICEBERG_CATALOG", "minio_catalog"),
-            uri=os.getenv("S3_ENDPOINT", "http://localhost:9000"),
-            warehouse=os.getenv("ICEBERG_WAREHOUSE", "s3://duckhouse-warehouse/"),
-            s3={"s3fs": get_s3_filesystem()}
+            os.getenv("ICEBERG_CATALOG", "minio_catalog"),
+            **{
+                "type": "sql",
+                "uri": f"sqlite:///{os.path.join(metadata_dir, 'pyiceberg_catalog.db')}",
+                "warehouse": get_iceberg_warehouse_path(),
+                "s3.endpoint": os.getenv("S3_ENDPOINT", "http://localhost:9000"),
+                "s3.access-key-id": aws_access_key,
+                "s3.secret-access-key": aws_secret_key,
+                "s3.force-virtual-addressing": "false",
+            }
         )
     except Exception as e:
         logger.error(f"Failed to create Iceberg catalog: {e}")
@@ -106,18 +125,21 @@ def get_duckdb_backend() -> DuckDBBackend:
 
 def get_iceberg_backend() -> IcebergBackend:
     """
-    Create and return a connected Iceberg backend instance.
+    Create and return a connected Iceberg backend instance (Iceberg seul, sans
+    la couche DuckDB — pour un accès en lecture directe si besoin).
 
-    Note: `warehouse_path` here is a local filesystem path, matching what
-    `IcebergBackend.do_connect` actually accepts in the installed xorq
-    version — it is not yet wired to MinIO/S3 (`get_s3_filesystem` /
-    `ICEBERG_WAREHOUSE` above target a different, unconnected code path).
+    Note : contrairement à `HybridBackend` (voir `backends/hybrid_backend.py`,
+    qui gère désormais un entrepôt MinIO/S3 via `_connect_s3_iceberg`), ce
+    `IcebergBackend` brut appelle directement `do_connect` de xorq, qui ne
+    supporte qu'un chemin de fichier local pour `warehouse_path` (voir la
+    note post-implémentation de l'ADR-0001). Utiliser `get_iceberg_catalog()`
+    ci-dessus, ou `HybridBackend`, si un accès MinIO/S3 est nécessaire.
     """
     try:
         backend = IcebergBackend()
         backend.do_connect(
             warehouse_path=os.getenv(
-                "ICEBERG_WAREHOUSE_PATH",
+                "ICEBERG_LOCAL_WAREHOUSE_PATH",
                 os.path.join(os.getcwd(), "data", "iceberg_warehouse"),
             ),
             namespace=get_iceberg_namespace(),

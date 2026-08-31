@@ -149,8 +149,32 @@ no `xorq.registry` module, no `xorq.duckdb.connect`, `FlightServer` takes
 `make_connection=`, not `client=`. These were invisible because the test suite mocked
 `xo`/`xorq` entirely rather than exercising the real package. Fixed in
 `hybrid_backend.py`, `xorq_config.py`, `app_xorq.py`, and `utils.py`; tests updated to
-mock at the correct import boundary instead of the defining module. Still open: the
-Iceberg `warehouse_path` the real backend expects is a local filesystem path, not an
-`s3://` URI — the MinIO/S3 wiring implied by `ICEBERG_WAREHOUSE` and
-`get_s3_filesystem()` in `utils.py` is not yet connected to `HybridBackend`. Tracked as a
-follow-up, not resolved by this ADR.
+mock at the correct import boundary instead of the defining module.
+
+### Update (2026-08-31): MinIO/S3 wiring resolved
+
+The gap noted below — `HybridBackend` accepting an `s3://` `warehouse_path` but the real
+`xorq.backends.pyiceberg.Backend.do_connect` always rewriting it to a local
+`file://Path(...).absolute()` — is now resolved. `HybridBackend.do_connect` detects an
+`s3://`/`s3a://` `warehouse_path` and routes to a new `_connect_s3_iceberg` method that
+builds the pyiceberg catalog directly (bypassing the parent's local-only logic), with the
+real `s3.endpoint`/`s3.access-key-id`/`s3.secret-access-key`/`s3.force-virtual-addressing`
+catalog properties. Catalog *metadata* (which tables exist) still lives in a local SQLite
+file — only table *data* goes to MinIO, via the `warehouse` catalog property. DuckDB is
+configured with `httpfs` + the same S3 credentials + path-style addressing (required by
+MinIO) so `_reflect_views`'s `iceberg_scan('s3://...')` calls can actually reach it.
+`xorq_config.py` now uses the project's existing `ICEBERG_WAREHOUSE` convention (already
+in `.env.example`, defaulting to `s3://duckhouse-warehouse/`) instead of the ad-hoc local
+env var this ADR originally introduced as a stopgap.
+
+Verified for real (catalog construction + namespace creation against the real pyiceberg
+library, and the exact DuckDB `SET`/`INSTALL` commands produced) without a live MinIO
+instance, since catalog metadata operations don't require one. **Not verified**: an
+actual data write/read round trip against a running MinIO — needs validation in an
+environment where MinIO can actually be reached (this sandbox cannot run the
+`docker-compose` stack). See `docs/PROMPT_VALIDATION_PHASE1_2.md` for the validation
+checklist this feeds into.
+
+Still open, unrelated to this update: `scripts/ingest_flight.py` and `scripts/pipeline.py`
+still reference the `target=` parameter removed earlier by this same ADR — they predate
+that change and are now broken. Not fixed here; flagged for a separate pass.
