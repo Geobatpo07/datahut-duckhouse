@@ -265,10 +265,20 @@ class HybridBackend(PyIcebergBackend):
             logger.warning(f"Snapshot DuckDB ignoré ({type(exc).__name__}: {exc})")
 
     def _get_schema_using_query(self, query: str) -> sch.Schema:
-        """Retourne le schéma Arrow d’une requête."""
-        limit_query = f"SELECT * FROM ({query}) AS t LIMIT 0"
-        result = self.duckdb_con.sql(limit_query)
-        return sch.Schema.from_pyarrow(result.to_pyarrow())
+        """
+        Schéma Arrow d'une requête SQL brute — utilisé par le backend ibis
+        Flight côté client (``xorq.flight``) quand il fait ``.sql(...)``.
+
+        On rafraîchit d'abord les vues (la requête peut nommer une table Iceberg
+        qui n'a pas encore été reflétée dans cette session), puis on demande à
+        DuckDB le schéma via un ``LIMIT 0`` exécuté directement sur la connexion
+        brute — ``sch.Schema.from_pyarrow`` attend un ``pa.Schema``, pas la
+        ``pa.Table`` que renvoie l'API ibis.
+        """
+        self._reflect_views()
+        limit_query = f"SELECT * FROM ({query}\n) AS _dhd_schema LIMIT 0"
+        result = self.duckdb_con.con.execute(limit_query).arrow()
+        return sch.Schema.from_pyarrow(result.schema)
 
     def to_pyarrow_batches(
         self,

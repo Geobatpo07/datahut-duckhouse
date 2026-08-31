@@ -1,7 +1,7 @@
 # DataHut-DuckHouse — Roadmap vers un SaaS
 
 **Statut :** Document vivant, à réviser à chaque changement de phase.
-**Dernière mise à jour :** 2026-08-29
+**Dernière mise à jour :** 2026-08-29 (Phases 1 & 2 validées en conditions réelles)
 
 ## Principe directeur
 
@@ -60,24 +60,46 @@ push.
 aller-retour complet sur une table. ✅ Atteinte (validée hors Docker ; reste à faire
 tourner un `docker-compose up` réel de bout en bout).
 
+### Validation réelle (2026-08-29)
+
+Serveur Flight démarré pour de vrai (`uv run python -m flight_server.app.app_xorq`,
+warehouse local via `ICEBERG_WAREHOUSE_PATH`) et exercé de bout en bout par le CLI
+`dhd` (Phase 2) : `create-table` → `list-tables` → `query` → `insert` (append **et**
+overwrite) → `query`, résultats cohérents (les lignes insérées apparaissent). Un bug
+a été trouvé et corrigé à cette occasion : `HybridBackend._get_schema_using_query`
+passait une `pa.Table` là où `sch.Schema.from_pyarrow` attend un `pa.Schema`, et ne
+rafraîchissait pas les vues — le chemin `dhd query "<SQL brut>"` était donc cassé.
+Documenté dans ADR-0001.
+
 ---
 
-## Phase 2 — CLI
+## Phase 2 — CLI ✅ Fait
 
 **Objectif :** un outil en ligne de commande qui exerce le chemin Flight complet,
 utilisable pour un usage réel (toi, AYITISTATS) sans notion de tenant.
 
-- [ ] `dhd create-table <name> <source>`
-- [ ] `dhd insert <table> <source> [--mode append|overwrite]`
-- [ ] `dhd query <sql>` — lecture via les vues DuckDB reflétées
-- [ ] `dhd list-tables`
-- [ ] `dhd branch <create|list|switch>` — expose le modèle Nessie (voir Phase 3) une
-      fois disponible ; jusque-là, no-op documenté ou message clair "pas encore actif"
-- [ ] Distribution simple : `poetry install` + entrypoint, pas encore de packaging PyPI
+- [x] `dhd create-table <name> <source>` — `.csv` / `.parquet` / `.json`
+- [x] `dhd insert <table> <source> [--mode append|overwrite]`
+- [x] `dhd query <sql> [--limit N] [--format table|csv|json]` — lecture via les vues
+      DuckDB reflétées, en envoyant le SQL brut au serveur (`Backend.sql()` de
+      `xorq.flight`, qui demande le schéma au serveur puis exécute l'expression)
+- [x] `dhd list-tables`
+- [x] `dhd branch <create|list|switch>` — stub explicite : échoue avec un message
+      clair renvoyant à Nessie / ADR-0002 / Phase 3, pas d'implémentation partielle
+- [x] Distribution : `datahut_duckhouse/` est le seul package construit
+      (`[project.scripts] dhd`, backend hatchling), `uv sync` suffit ; pas de PyPI
+
+Le CLI parle au **serveur Flight**, jamais directement à `HybridBackend`. Client
+construit sur `xorq.flight.backend.Backend` (et non `xorq.flight.connect`, dont le
+`FlightUrl` bind le port — fait pour le serveur). Pré-check TCP côté client pour
+transformer "serveur pas lancé" en erreur claire plutôt qu'un hang (cf. le point
+ouvert sur l'absence de timeout `FlightClient` dans ADR-0001).
 
 **Dépendances :** Phase 1.
 **Sortie de phase :** tu peux ingérer et interroger des données réelles (AYITISTATS,
-par exemple) sans écrire de Python à chaque fois.
+par exemple) sans écrire de Python à chaque fois. ✅ Atteinte hors Docker ;
+`tests/test_cli.py` couvre le comportement CLI + un aller-retour bout en bout contre
+un vrai serveur Flight in-process.
 
 ---
 

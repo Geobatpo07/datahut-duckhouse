@@ -185,10 +185,32 @@ Verified end to end (not mocked): local-fs and S3 (moto) round trips — `create
 plus a Flight client `upload_table` → `do_put` → Iceberg → DuckDB reflection round trip.
 See `tests/test_hybrid_backend.py`.
 
+### `_get_schema_using_query` fix (2026-08-29, found via the `dhd` CLI)
+
+Running the real `dhd` CLI against a real Flight server (roadmap Phase 2 validation)
+surfaced that `dhd query "<raw SQL>"` was broken: the Flight ibis backend
+(`xorq.flight.backend.Backend.sql()`) asks the server for the query schema via
+`GetSchemaQueryAction` → `conn._get_schema_using_query(query)`, and `HybridBackend`'s
+implementation (a) passed the `pa.Table` returned by the ibis `.sql().to_pyarrow()`
+into `sch.Schema.from_pyarrow`, which wants a `pa.Schema` (crash:
+`'ChunkedArray' object has no attribute 'name'`), and (b) never refreshed the DuckDB
+views first, so a fresh session couldn't resolve the table name. Now it calls
+`_reflect_views()` then a `LIMIT 0` on the raw DuckDB connection and reads
+`result.schema`. This path had no coverage because nothing exercised the client-side
+`.sql()` route before the CLI existed — consistent with the earlier finding that the
+suite mocked the xorq API rather than running it. Covered now by
+`tests/test_cli.py::TestCliEndToEnd`.
+
+`iceberg_backend.py` (dead code doing S3 I/O at import time) was also deleted in this
+pass.
+
 ### Still open
 
 - The per-write snapshot + full-table reflection don't scale; revisit together when
   volume demands it (see Consequences → "To revisit").
-- `flight_server/app/backends/iceberg_backend.py` and `utils.get_iceberg_backend` /
-  `get_duckdb_backend` are now-unused parallel backend helpers; candidates for removal
-  in a cleanup pass.
+- `utils.get_iceberg_backend` / `get_duckdb_backend` are now-unused bare helpers;
+  candidates for removal in a cleanup pass.
+- `xorq==0.2.4`'s `FlightClient` has no visible connect/RPC timeout — an unreachable or
+  hung server makes any Flight caller (`dhd` included) block rather than fail fast. The
+  CLI does a cheap TCP pre-check to cover the common "server not started" case; a real
+  timeout would need an upstream fix or a wrapper, deferred.

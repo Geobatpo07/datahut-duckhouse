@@ -528,9 +528,10 @@ wheels = [
 [[package]]
 name = "datahut-duckhouse"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "boto3" },
+    { name = "click" },
     { name = "dbt-core" },
     { name = "dbt-duckdb" },
     { name = "dbt-trino" },
@@ -581,6 +582,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3" },
+    { name = "click", specifier = ">=8.1" },
     { name = "dbt-core", specifier = ">=1.9.0" },
     { name = "dbt-duckdb", specifier = ">=1.9.2" },
     { name = "dbt-trino", specifier = ">=1.9.0" },

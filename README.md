@@ -96,18 +96,30 @@ stays at the repo root. VS Code users can also "Reopen in Container" — the
 [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) brings up the
 same stack as a dev environment.
 
-### 5. Create a tenant / ingest data
+### 5. Ingest and query with the `dhd` CLI
+
+`dhd` is the single-user client (roadmap Phase 2). It drives the Flight server —
+start one first (`make dev-server`, or `uv run python -m flight_server.app.app_xorq`),
+then in another shell:
 
 ```bash
-uv run python scripts/create_tenant.py --id tenant_acme
-# place a CSV at ingestion/data/data.csv, then:
-uv run python scripts/ingest_flight.py
+uv run dhd create-table sales data/sales.csv      # .csv / .parquet / .json
+uv run dhd list-tables
+uv run dhd query "SELECT city, sum(amount) FROM sales GROUP BY city" --limit 20
+uv run dhd insert sales data/sales_new.csv          # --mode append|overwrite
 ```
+
+`dhd` reads `FLIGHT_SERVER_HOST` / `FLIGHT_SERVER_PORT` (default `localhost:8815`).
+If the server isn't running it fails with a clear message rather than hanging.
+`dhd branch …` is a placeholder until Nessie lands (ADR-0002 / Phase 3).
 
 ## 📂 Project Structure
 
 ```
 datahut-duckhouse/
+├── datahut_duckhouse/    # `dhd` CLI (the only packaged component)
+│   ├── cli.py
+│   └── connection.py
 ├── flight_server/        # Arrow Flight Server + HybridBackend
 │   ├── app/
 │      ├── app_xorq.py

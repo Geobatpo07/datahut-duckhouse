@@ -22,7 +22,7 @@ sync: ## Install the locked dependency set (incl. dev)
 	$(UV) sync --frozen
 
 test: ## Run tests
-	$(RUN) pytest --cov=flight_server --cov=scripts --cov-report=term-missing
+	$(RUN) pytest --cov=flight_server --cov=scripts --cov=datahut_duckhouse --cov-report=term-missing
 
 test-watch: ## Run tests in watch mode
 	$(RUN) pytest-watch
@@ -30,7 +30,7 @@ test-watch: ## Run tests in watch mode
 lint: ## Run linting
 	$(RUN) ruff check .
 	$(RUN) black --check .
-	$(RUN) mypy flight_server scripts
+	$(RUN) mypy flight_server scripts datahut_duckhouse
 
 format: ## Format code
 	$(RUN) ruff check . --fix

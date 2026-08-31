@@ -34,7 +34,7 @@ jobs:
           uv run black --check .
 
       - name: Type check
-        run: uv run mypy flight_server scripts
+        run: uv run mypy flight_server scripts datahut_duckhouse
 
       - name: Security scan
         run: |
@@ -42,7 +42,7 @@ jobs:
           uv run safety check || true
 
       - name: Tests
-        run: uv run pytest --cov=flight_server --cov=scripts --cov-report=xml
+        run: uv run pytest --cov=flight_server --cov=scripts --cov=datahut_duckhouse --cov-report=xml
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

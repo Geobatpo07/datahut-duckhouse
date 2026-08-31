@@ -36,7 +36,11 @@ dependencies = [
     "fastapi>=0.116.0",
     "uvicorn>=0.24.0",
     "pydantic>=2.9.0",
+    "click>=8.1",
 ]
+
+[project.scripts]
+dhd = "datahut_duckhouse.cli:main"
 
 [dependency-groups]
 dev = [
@@ -55,10 +59,16 @@ dev = [
     "moto[s3,server]>=5.0.0",
 ]
 
-# This repo is an application, not a distributable package: no build backend,
-# code is run via PYTHONPATH / `python -m ...` (see .devcontainer + Dockerfiles).
-[tool.uv]
-package = false
+# Only the client package (`datahut_duckhouse/`, providing the `dhd` entrypoint)
+# is built into the venv. The server code (`flight_server/`, `scripts/`) is not
+# packaged — it runs via PYTHONPATH / `python -m ...` (see .devcontainer +
+# Dockerfiles), which is why the Dockerfiles pass `--no-install-project`.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["datahut_duckhouse"]
 
 [tool.ruff]
 line-length = 88
@@ -93,11 +103,11 @@ warn_return_any = false
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q --cov=flight_server --cov=scripts --cov-report=term-missing"
+addopts = "-ra -q --cov=flight_server --cov=scripts --cov=datahut_duckhouse --cov-report=term-missing"
 testpaths = ["tests"]
 
 [tool.coverage.run]
-source = ["flight_server", "scripts"]
+source = ["flight_server", "scripts", "datahut_duckhouse"]
 omit = ["tests/*", "*/test_*"]
 
 [tool.coverage.report]
