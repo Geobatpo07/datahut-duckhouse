@@ -1,9 +1,9 @@
 import os
-import sys
-import pyarrow as pa
-import pyarrow.csv as csv
-import duckdb
 import subprocess
+import sys
+
+import duckdb
+import pyarrow.csv as csv
 from dotenv import load_dotenv
 
 # Réutilise la connexion Flight déjà vérifiée du CLI plutôt que de construire
@@ -25,6 +25,7 @@ DUCKDB_PATH = os.getenv("DUCKDB_PATH", "ingestion/data/duckhouse.duckdb")
 DBT_PROJECT_PATH = "transform/dbt_project"
 DBT_PROFILES_DIR = f"{DBT_PROJECT_PATH}/config"
 
+
 def ingest_data():
     print("Étape 1 : Envoi des données au serveur Arrow Flight...")
 
@@ -38,18 +39,26 @@ def ingest_data():
     # create_table et insert envoient le même appel côté client ; c'est le
     # serveur qui décide création vs ajout selon que la table existe déjà.
     con.create_table(TABLE_NAME, table)
-    print(f"Données envoyées vers '{TABLE_NAME}' ({table.num_rows} lignes) dans Iceberg")
+    print(
+        f"Données envoyées vers '{TABLE_NAME}' ({table.num_rows} lignes) dans Iceberg"
+    )
+
 
 def run_dbt():
     print("Étape 2 : Exécution des transformations dbt...")
     result = subprocess.run(
         [
-            "poetry", "run", "dbt", "run",
-            "--project-dir", DBT_PROJECT_PATH,
-            "--profiles-dir", DBT_PROFILES_DIR
+            "poetry",
+            "run",
+            "dbt",
+            "run",
+            "--project-dir",
+            DBT_PROJECT_PATH,
+            "--profiles-dir",
+            DBT_PROFILES_DIR,
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
     if result.returncode != 0:
         print("Erreur dans dbt run :")
@@ -57,6 +66,7 @@ def run_dbt():
         print(result.stderr)
         raise RuntimeError("dbt run failed")
     print("dbt run exécuté avec succès")
+
 
 def query_results():
     print("Étape 3 : Requête de validation dans DuckDB")
@@ -70,6 +80,7 @@ def query_results():
         print(df)
     except Exception as e:
         print(f"Impossible de lire 'mart_rev_metrics' : {e}")
+
 
 if __name__ == "__main__":
     # Iceberg est l'unique cible de persistance (ADR-0001) : plus de branche

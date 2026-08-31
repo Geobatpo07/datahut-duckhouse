@@ -9,9 +9,8 @@ that the real server's do_put (FlightServerDelegate, which expects a
 datahut_duckhouse.connection.get_connection(), the same verified path the
 CLI uses. Only that network boundary is mocked here.
 """
+
 import importlib.util
-import os
-import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -40,7 +39,9 @@ def sample_csv(tmp_path):
 
 
 class TestIngestFlightScript:
-    def test_main_creates_table_via_verified_connection(self, sample_csv, monkeypatch, capsys):
+    def test_main_creates_table_via_verified_connection(
+        self, sample_csv, monkeypatch, capsys
+    ):
         monkeypatch.setenv("CSV_PATH", sample_csv)
         monkeypatch.setenv("FLIGHT_TABLE_NAME", "diseases")
 
@@ -58,7 +59,9 @@ class TestIngestFlightScript:
     def test_main_handles_missing_csv_without_connecting(self, monkeypatch, tmp_path):
         monkeypatch.setenv("CSV_PATH", str(tmp_path / "does_not_exist.csv"))
 
-        module = _load_script_module("ingest_flight_test_missing", "scripts/ingest_flight.py")
+        module = _load_script_module(
+            "ingest_flight_test_missing", "scripts/ingest_flight.py"
+        )
 
         with patch.object(module, "get_connection") as mock_get_connection:
             module.main()
@@ -67,7 +70,9 @@ class TestIngestFlightScript:
 
 
 class TestPipelineScript:
-    def test_ingest_data_creates_table_via_verified_connection(self, sample_csv, monkeypatch):
+    def test_ingest_data_creates_table_via_verified_connection(
+        self, sample_csv, monkeypatch
+    ):
         monkeypatch.setenv("CSV_PATH", sample_csv)
         monkeypatch.setenv("FLIGHT_TABLE_NAME", "diseases")
 

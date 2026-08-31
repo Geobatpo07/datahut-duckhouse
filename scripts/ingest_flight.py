@@ -1,7 +1,8 @@
 import os
 import sys
-from dotenv import load_dotenv
+
 import pyarrow.csv as csv
+from dotenv import load_dotenv
 
 # Réutilise la connexion Flight déjà vérifiée du CLI (datahut_duckhouse/connection.py)
 # plutôt qu'une construction manuelle : xorq.flight.client.FlightClient attend
@@ -16,6 +17,7 @@ load_dotenv()
 # Configuration
 CSV_PATH = os.getenv("CSV_PATH", "ingestion/data/data.csv")
 TABLE_NAME = os.getenv("FLIGHT_TABLE_NAME", "diseases")
+
 
 def main():
     # Lecture du fichier CSV
@@ -37,6 +39,7 @@ def main():
     con.create_table(TABLE_NAME, table)
 
     print(f"Données envoyées avec succès à la table : {TABLE_NAME}")
+
 
 if __name__ == "__main__":
     main()
