@@ -62,3 +62,8 @@ def connect() -> _FlightBackend:
     backend = _FlightBackend()
     backend.do_connect(host=host, port=port)
     return backend
+
+
+# Alias kept for the ingestion scripts (scripts/ingest_flight.py, pipeline.py)
+# and their tests, which were written against this name.
+get_connection = connect
