@@ -151,7 +151,9 @@ def flight_server(tmp_path_factory):
             "FLIGHT_SERVER_PORT",
         )
     }
-    os.environ.pop("ICEBERG_WAREHOUSE", None)
+    # Empty (not absent): a repo-root .env + load_dotenv() would otherwise
+    # repopulate ICEBERG_WAREHOUSE and force this local test onto s3://.
+    os.environ["ICEBERG_WAREHOUSE"] = ""
     os.environ["ICEBERG_WAREHOUSE_PATH"] = str(d / "wh")
     os.environ["DUCKDB_PATH"] = str(d / "duckhouse.duckdb")
     os.environ["FLIGHT_SERVER_HOST"] = "127.0.0.1"

@@ -71,6 +71,16 @@ instance/
 # Sphinx documentation
 docs/_build/
 
+# dbt
+transform/dbt_project/dbt_packages/
+transform/dbt_project/logs/
+transform/dbt_project/config/.user.yml
+
+# local dhd helpers / pyiceberg engine catalog
+dhd-minio.ps1
+dhd-minio.sh
+ingestion/data/pyiceberg_catalog.db
+
 # PyBuilder
 .pybuilder/
 target/

@@ -8,6 +8,7 @@ bascule trigger.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -19,6 +20,8 @@ import pyarrow.parquet as papq
 
 from datahut_duckhouse import __version__
 from datahut_duckhouse.connection import FlightUnavailableError, connect, flight_target
+
+ENGINES = ("flight", "pyiceberg")
 
 _READERS = {
     ".csv": pacsv.read_csv,
@@ -91,8 +94,26 @@ def _fmt_cell(value: object) -> str:
     return str(value)
 
 
-def _connect_or_die():
+def _resolve_engine(ctx: click.Context) -> str:
+    engine = (ctx.obj or {}).get("engine") or os.getenv("DHD_ENGINE") or "flight"
+    if engine not in ENGINES:
+        raise click.ClickException(
+            f"Unknown engine '{engine}'. Choose from: {', '.join(ENGINES)}."
+        )
+    return engine
+
+
+def _connect_or_die(ctx: click.Context):
+    engine = _resolve_engine(ctx)
     try:
+        if engine == "pyiceberg":
+            from datahut_duckhouse.ingest import IngestUnavailableError
+            from datahut_duckhouse.ingest import connect as ingest_connect
+
+            try:
+                return ingest_connect()
+            except IngestUnavailableError as exc:
+                raise click.ClickException(str(exc)) from exc
         return connect()
     except FlightUnavailableError as exc:
         raise click.ClickException(str(exc)) from exc
@@ -100,18 +121,32 @@ def _connect_or_die():
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, prog_name="dhd")
-def cli() -> None:
+@click.option(
+    "--engine",
+    type=click.Choice(ENGINES),
+    default=None,
+    help="Ingestion/query engine. 'flight' drives the Arrow Flight server (xorq); "
+    "'pyiceberg' talks straight to Iceberg on MinIO, serverless and xorq-free. "
+    "Env: DHD_ENGINE. Default: flight.",
+)
+@click.pass_context
+def cli(ctx: click.Context, engine: str | None) -> None:
     """DataHut-DuckHouse CLI - drive the Flight server (Iceberg + DuckDB)."""
+    ctx.obj = {"engine": engine}
 
 
 @cli.command("list-tables")
-def list_tables() -> None:
+@click.pass_context
+def list_tables(ctx: click.Context) -> None:
     """List tables known to the server (Iceberg namespace, reflected in DuckDB)."""
-    backend = _connect_or_die()
+    backend = _connect_or_die(ctx)
     names = sorted(backend.list_tables())
     if not names:
-        host, port = flight_target()
-        click.echo(f"(no tables on {host}:{port})")
+        if _resolve_engine(ctx) == "pyiceberg":
+            click.echo(f"(no tables in namespace '{backend.namespace}')")
+        else:
+            host, port = flight_target()
+            click.echo(f"(no tables on {host}:{port})")
         return
     for name in names:
         click.echo(name)
@@ -120,9 +155,10 @@ def list_tables() -> None:
 @cli.command("create-table")
 @click.argument("name")
 @click.argument("source", type=click.Path())
-def create_table(name: str, source: str) -> None:
+@click.pass_context
+def create_table(ctx: click.Context, name: str, source: str) -> None:
     """Create table NAME in Iceberg from SOURCE (.csv/.parquet/.json)."""
-    backend = _connect_or_die()
+    backend = _connect_or_die(ctx)
     if name in set(backend.list_tables()):
         raise click.ClickException(
             f"Table '{name}' already exists. Use `dhd insert {name} {source}` "
@@ -142,9 +178,10 @@ def create_table(name: str, source: str) -> None:
     default="append",
     show_default=True,
 )
-def insert(table: str, source: str, mode: str) -> None:
+@click.pass_context
+def insert(ctx: click.Context, table: str, source: str, mode: str) -> None:
     """Insert rows from SOURCE into an existing TABLE."""
-    backend = _connect_or_die()
+    backend = _connect_or_die(ctx)
     if table not in set(backend.list_tables()):
         raise click.ClickException(
             f"Table '{table}' does not exist. Create it first with "
@@ -168,9 +205,10 @@ def insert(table: str, source: str, mode: str) -> None:
     default="table",
     show_default=True,
 )
-def query(sql: str, limit: int | None, fmt: str) -> None:
+@click.pass_context
+def query(ctx: click.Context, sql: str, limit: int | None, fmt: str) -> None:
     """Run a read-only SQL query against the reflected DuckDB views."""
-    backend = _connect_or_die()
+    backend = _connect_or_die(ctx)
     try:
         expr = backend.sql(sql)
         if limit is not None:
