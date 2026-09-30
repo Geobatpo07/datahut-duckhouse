@@ -1,114 +1,126 @@
-.PHONY: help install test lint format clean docker-build docker-up docker-down
+.PHONY: help env install lock sync test test-watch lint format security quality clean \
+	docker-build docker-up docker-down docker-logs docker-restart
+
+UV ?= uv
+RUN := $(UV) run
+COMPOSE := docker compose
 
 help: ## Show this help message
 	@echo "Available commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install dependencies
-	poetry install --with dev
-	poetry run pre-commit install
+env: ## Create .env from the template if it does not exist
+	@test -f .env || (cp .devcontainer/.env.example .env && echo "Created .env — review the secrets before 'make docker-up'")
+
+install: sync ## Install dependencies + git hooks
+	$(RUN) pre-commit install
+
+lock: ## Refresh uv.lock
+	$(UV) lock
+
+sync: ## Install the locked dependency set (incl. dev)
+	$(UV) sync --frozen
 
 test: ## Run tests
-	poetry run pytest --cov=flight_server --cov=scripts --cov-report=term-missing
+	$(RUN) pytest --cov=flight_server --cov=scripts --cov=datahut_duckhouse --cov-report=term-missing
 
 test-watch: ## Run tests in watch mode
-	poetry run pytest-watch
+	$(RUN) pytest-watch
 
 lint: ## Run linting
-	poetry run ruff check .
-	poetry run black --check .
-	poetry run isort --check-only .
-	poetry run mypy flight_server scripts
+	$(RUN) ruff check .
+	$(RUN) black --check .
+	$(RUN) mypy flight_server scripts datahut_duckhouse
 
 format: ## Format code
-	poetry run black .
-	poetry run isort .
-	poetry run ruff check . --fix
+	$(RUN) ruff check . --fix
+	$(RUN) black .
 
 security: ## Run security checks
-	poetry run bandit -r flight_server scripts
-	poetry run safety check
+	$(RUN) bandit -r flight_server scripts
+	$(RUN) safety check
 
 quality: lint security test ## Run all quality checks
 
 clean: ## Clean up temporary files
 	find . -type f -name "*.pyc" -delete
-	find . -type d -name "__pycache__" -delete
+	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type d -name "*.egg-info" -exec rm -rf {} +
 	find . -type f -name ".coverage" -delete
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name ".mypy_cache" -exec rm -rf {} +
+	find . -type d -name ".ruff_cache" -exec rm -rf {} +
 
 docker-build: ## Build Docker images
-	docker-compose build
+	$(COMPOSE) build
 
-docker-up: ## Start Docker services
-	docker-compose up -d
+docker-up: env ## Start Docker services
+	$(COMPOSE) up -d
 
 docker-down: ## Stop Docker services
-	docker-compose down
+	$(COMPOSE) down
 
 docker-logs: ## View Docker logs
-	docker-compose logs -f
+	$(COMPOSE) logs -f
 
 docker-restart: ## Restart Docker services
-	docker-compose down && docker-compose up -d
+	$(COMPOSE) down && $(COMPOSE) up -d
 
 create-tenant: ## Create a new tenant (usage: make create-tenant TENANT_ID=my_tenant)
-	poetry run python scripts/create_tenant.py --id $(TENANT_ID)
+	$(RUN) python scripts/create_tenant.py --id $(TENANT_ID)
 
 delete-tenant: ## Delete a tenant (usage: make delete-tenant TENANT_ID=my_tenant)
-	poetry run python scripts/delete_tenant.py --id $(TENANT_ID)
+	$(RUN) python scripts/delete_tenant.py --id $(TENANT_ID)
 
 ingest-data: ## Ingest data via Flight server
-	poetry run python scripts/ingest_flight.py
+	$(RUN) python scripts/ingest_flight.py
 
 query-data: ## Query data from DuckDB
-	poetry run python scripts/query_duckdb.py
+	$(RUN) python scripts/query_duckdb.py
 
 dbt-run: ## Run dbt transformations
-	cd transform/dbt_project && poetry run dbt run
+	cd transform/dbt_project && $(RUN) dbt run
 
 dbt-test: ## Run dbt tests
-	cd transform/dbt_project && poetry run dbt test
+	cd transform/dbt_project && $(RUN) dbt test
 
 setup-iceberg: ## Setup Iceberg tables through Trino
-	poetry run python scripts/setup_iceberg_tables.py
+	$(RUN) python scripts/setup_iceberg_tables.py
 
-query-trino: ## Query Trino (usage: make query-trino QUERY="SELECT * FROM iceberg.default.patient_data LIMIT 5")
-	poetry run python scripts/query_trino.py --query "$(QUERY)"
+query-trino: ## Query Trino (usage: make query-trino QUERY="SELECT ...")
+	$(RUN) python scripts/query_trino.py --query "$(QUERY)"
 
 query-trino-list: ## List Trino catalogs, schemas, and tables
-	poetry run python scripts/query_trino.py --list
+	$(RUN) python scripts/query_trino.py --list
 
 query-trino-table: ## Query specific Trino table (usage: make query-trino-table TABLE=patient_data)
-	poetry run python scripts/query_trino.py --table $(TABLE)
+	$(RUN) python scripts/query_trino.py --table $(TABLE)
 
 query-trino-info: ## Get table info from Trino (usage: make query-trino-info TABLE=patient_data)
-	poetry run python scripts/query_trino.py --table $(TABLE) --info
+	$(RUN) python scripts/query_trino.py --table $(TABLE) --info
 
 dbt-run-dev: ## Run dbt in development mode (DuckDB)
-	cd transform/dbt_project && poetry run dbt run --profiles-dir config --target dev
+	cd transform/dbt_project && $(RUN) dbt run --profiles-dir config --target dev
 
 dbt-run-prod: ## Run dbt in production mode (Trino)
-	cd transform/dbt_project && poetry run dbt run --profiles-dir config --target prod
+	cd transform/dbt_project && $(RUN) dbt run --profiles-dir config --target prod
 
 dbt-test-dev: ## Run dbt tests in development mode
-	cd transform/dbt_project && poetry run dbt test --profiles-dir config --target dev
+	cd transform/dbt_project && $(RUN) dbt test --profiles-dir config --target dev
 
 dbt-test-prod: ## Run dbt tests in production mode
-	cd transform/dbt_project && poetry run dbt test --profiles-dir config --target prod
+	cd transform/dbt_project && $(RUN) dbt test --profiles-dir config --target prod
 
 full-stack-test: ## Run full stack integration test
 	@echo "Running full stack integration test..."
-	make docker-up
+	$(MAKE) docker-up
 	@echo "Waiting for services to be ready..."
 	sleep 30
-	make setup-iceberg
-	make ingest-data
-	make dbt-run-dev
-	make dbt-test-dev
-	make query-trino-list
+	$(MAKE) setup-iceberg
+	$(MAKE) ingest-data
+	$(MAKE) dbt-run-dev
+	$(MAKE) dbt-test-dev
+	$(MAKE) query-trino-list
 	@echo "Full stack test completed successfully!"
 
 setup: install docker-up ## Complete setup for new development environment
@@ -119,24 +131,23 @@ setup: install docker-up ## Complete setup for new development environment
 
 validate-env: ## Validate environment configuration
 	@echo "Validating environment configuration..."
-	@python -c "from flight_server.app.utils import validate_environment; validate_environment()"
+	@$(RUN) python -c "from flight_server.app.utils import validate_environment; validate_environment()"
 	@echo "Environment validation passed!"
 
 demo-architecture: ## Demonstrate the corrected architecture
-	poetry run python scripts/demonstrate_architecture.py
+	$(RUN) python scripts/demonstrate_architecture.py
 
-query-orchestrator: ## Test the query orchestrator (usage: make query-orchestrator QUERY="SELECT COUNT(*) FROM local_patients")
-	poetry run python -c "from flight_server.app.query_orchestrator import get_query_orchestrator; o = get_query_orchestrator(); print(o.execute_query('$(QUERY)')); o.close()"
+query-diagnostics: ## Analyze a query's shape/complexity (usage: make query-diagnostics QUERY="SELECT ...")
+	$(RUN) python -c "from flight_server.app.query_diagnostics import analyze_query; print(analyze_query('$(QUERY)'))"
 
 dev-server: ## Start development server
-	poetry run python -m flight_server.app.app_xorq
+	$(RUN) python -m flight_server.app.app_xorq
 
 benchmark: ## Run performance benchmarks
-	@echo "Running performance benchmarks..."
-	poetry run python -m pytest tests/benchmarks/ -v
+	$(RUN) python -m pytest tests/benchmarks/ -v
 
 docs: ## Generate documentation
-	poetry run sphinx-build -b html docs docs/_build/html
+	$(RUN) sphinx-build -b html docs docs/_build/html
 
 serve-docs: ## Serve documentation locally
-	poetry run python -m http.server 8000 --directory docs/_build/html
+	$(RUN) python -m http.server 8000 --directory docs/_build/html

@@ -1,0 +1,20 @@
+# Normalize line endings. Text is LF in the repo; these files must stay LF on
+# checkout too (CRLF breaks shell continuations in Docker RUN, entrypoints, etc.).
+* text=auto eol=lf
+
+*.py            text eol=lf
+*.sh            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.toml          text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
+Dockerfile      text eol=lf
+*.Dockerfile    text eol=lf
+Makefile        text eol=lf
+uv.lock         text eol=lf linguist-generated=true
+
+*.png           binary
+*.jpg           binary
+*.duckdb        binary
+*.db            binary

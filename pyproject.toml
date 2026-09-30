@@ -1,61 +1,74 @@
-[tool.poetry]
+[project]
 name = "datahut-duckhouse"
 version = "0.1.0"
 description = "A hybrid data stack combining DuckDB, Iceberg, Arrow Flight, and dbt"
-authors = ["Geobatpo07 <lgeobatpo98@gmail.com>"]
 readme = "README.md"
-packages = [{ include = "datahut_duckhouse" }]
+requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "Geobatpo07", email = "lgeobatpo98@gmail.com" }]
 
+dependencies = [
+    "duckdb>=1.1.3,<1.2",
+    "pyarrow>=17",
+    "pandas",
+    "numpy>=1.24.0",
+    "grpcio",
+    "grpcio-tools",
+    "xorq==0.2.4",
+    "pyiceberg[sql-sqlite]>=0.9.0",
+    "dbt-core>=1.9.0",
+    "dbt-duckdb>=1.9.2",
+    "dbt-trino>=1.9.0",
+    "trino>=0.328.0",
+    "s3fs",
+    "boto3",
+    "python-dotenv",
+    "urllib3>=2.2.3",
+    "sqlalchemy>=2.0.0",
+    "opentelemetry-api>=1.14.0",
+    "opentelemetry-sdk>=1.14.0",
+    "opentelemetry-exporter-jaeger>=1.14.0",
+    "opentelemetry-instrumentation-grpc>=0.48b0",
+    # opentelemetry-exporter-jaeger (EOL) under-declares this; pin it explicitly.
+    "deprecated>=1.2.14",
+    "psutil>=5.9.0",
+    "registry>=0.4.2,<0.5.0",
+    "fastapi>=0.116.0",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.9.0",
+    "click>=8.1",
+]
 
-[tool.poetry.dependencies]
-# Indique clairement la version de Python requise
-python = ">=3.11"
-duckdb = "*"
-pyarrow = {extras = ["flight"], version = "*"}
-pandas = "*"
-grpcio = "*"
-grpcio-tools = "*"
-pyiceberg = ">=0.9.0"
-dbt-core = ">=1.9.0"
-dbt-duckdb = ">=1.9.2"
-dbt-trino = ">=1.9.0"
-s3fs = "*"
-boto3 = "*"
-python-dotenv = "*"
-xorq = ">=0.2.2"
-urllib3 = ">=2.2.3"
-opentelemetry-api = ">=1.14.0"
-opentelemetry-sdk = ">=1.14.0"
-opentelemetry-exporter-jaeger = ">=1.14.0"
-opentelemetry-instrumentation-grpc = ">=0.48b0"
-psutil = ">=5.9.0"
-trino = ">=0.328.0"
-numpy = ">=1.24.0"
-registry = ">=0.4.2,<0.5.0"
-fastapi = "^0.116.0"
-uvicorn = "^0.24.0"
-pydantic = "^2.9.0"
-sqlalchemy = "^2.0.0"
+[project.scripts]
+dhd = "datahut_duckhouse.cli:main"
 
-[tool.poetry.group.dev.dependencies]
-ipython = "^9.0.2"
-ruff = "^0.6.7"
-pytest = "^8.0.0"
-pytest-cov = "^4.0.0"
-pytest-asyncio = { version = "^0.24.0", markers = "python_version >= '3.8'" }
-mypy = "^1.8.0"
-black = "^24.0.0"
-isort = "^5.13.0"
-flake8 = "^7.0.0"
-pre-commit = "^3.6.0"
-sphinx = "^7.2.0"
-sphinx-rtd-theme = "^2.0.0"
-bandit = "^1.7.0"
-safety = "^3.0.0"
+[dependency-groups]
+dev = [
+    "ipython>=9.0.2",
+    "ruff>=0.6.7",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.24.0",
+    "mypy>=1.8.0",
+    "black>=24.0.0",
+    "pre-commit>=3.6.0",
+    "sphinx>=7.2.0",
+    "sphinx-rtd-theme>=2.0.0",
+    "bandit>=1.7.0",
+    "safety>=3.0.0",
+    "moto[s3,server]>=5.0.0",
+]
 
+# Only the client package (`datahut_duckhouse/`, providing the `dhd` entrypoint)
+# is built into the venv. The server code (`flight_server/`, `scripts/`) is not
+# packaged — it runs via PYTHONPATH / `python -m ...` (see .devcontainer +
+# Dockerfiles), which is why the Dockerfiles pass `--no-install-project`.
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["datahut_duckhouse"]
 
 [tool.ruff]
 line-length = 88
@@ -63,29 +76,38 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "T20"]
-ignore = ["E501", "W503"]
+ignore = [
+    "E501",  # line length is handled by black
+    "B027",  # empty method in ABC without @abstractmethod — used as optional hooks
+]
+
+[tool.ruff.lint.per-file-ignores]
+# CLI entrypoints: printing to stdout is the point.
+"scripts/**" = ["T201"]
+"validate_project.py" = ["T201"]
 
 [tool.black]
 line-length = 88
 target-version = ['py311']
 
-[tool.isort]
-profile = "black"
-line_length = 88
-
 [tool.mypy]
-python_version = "3.11"
-warn_return_any = true
+python_version = "3.12"
 warn_unused_configs = true
-disallow_untyped_defs = true
+ignore_missing_imports = true
+explicit_package_bases = true
+mypy_path = "."
+exclude = ['^\.venv/', '^xorq/']
+# The codebase is largely untyped; tighten these incrementally.
+disallow_untyped_defs = false
+warn_return_any = false
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q --cov=flight_server --cov=scripts --cov-report=term-missing"
+addopts = "-ra -q --cov=flight_server --cov=scripts --cov=datahut_duckhouse --cov-report=term-missing"
 testpaths = ["tests"]
 
 [tool.coverage.run]
-source = ["flight_server", "scripts"]
+source = ["flight_server", "scripts", "datahut_duckhouse"]
 omit = ["tests/*", "*/test_*"]
 
 [tool.coverage.report]

@@ -1,5 +1,6 @@
-import duckdb
 import os
+
+import duckdb
 from dotenv import load_dotenv
 
 # Charger les variables d'environnement
@@ -7,6 +8,7 @@ load_dotenv()
 
 # Obtenir le chemin vers la base DuckDB
 DUCKDB_PATH = os.getenv("DUCKDB_PATH", "ingestion/data/duckhouse.duckdb")
+
 
 def main():
     if not os.path.exists(DUCKDB_PATH):
@@ -38,6 +40,7 @@ def main():
         print(f"Total de lignes : {total}")
     except Exception as e:
         print(f"Erreur dans la requête : {e}")
+
 
 if __name__ == "__main__":
     main()

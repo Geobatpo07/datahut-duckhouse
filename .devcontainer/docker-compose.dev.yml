@@ -1,0 +1,17 @@
+# Dev-container overrides for the root docker-compose.yml.
+# Only loaded by VS Code Dev Containers (see devcontainer.json) — the root
+# compose file stays production-shaped and is unaffected.
+
+services:
+  flight-server:
+    # Stop at the uv builder stage: it already has uv + build toolchain.
+    build:
+      target: builder
+    command: sleep infinity
+    user: root
+    volumes:
+      - ..:/workspace:cached
+    working_dir: /workspace
+    # Keep the supporting services reachable but don't auto-run the real server.
+    environment:
+      FLIGHT_SERVER_HOST: 0.0.0.0

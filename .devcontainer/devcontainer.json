@@ -1,0 +1,43 @@
+{
+  "name": "datahut-duckhouse",
+  "dockerComposeFile": [
+    "../docker-compose.yml",
+    "docker-compose.dev.yml"
+  ],
+  "service": "flight-server",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "runServices": ["minio", "trino", "xorq"],
+  "postCreateCommand": "uv sync --frozen && uv run pre-commit install",
+  "remoteEnv": {
+    "PYTHONPATH": "/workspace",
+    "PYTHONIOENCODING": "utf-8",
+    "UV_LINK_MODE": "copy"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/workspace/.venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }
+      },
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-azuretools.vscode-docker",
+        "tamasfe.even-better-toml"
+      ]
+    }
+  },
+  "forwardPorts": [8815, 9000, 9001, 8080, 9980, 8090],
+  "portsAttributes": {
+    "8815": { "label": "Arrow Flight" },
+    "9000": { "label": "MinIO S3" },
+    "9001": { "label": "MinIO console" },
+    "8080": { "label": "Trino" },
+    "9980": { "label": "XORQ API" },
+    "8090": { "label": "XORQ admin" }
+  }
+}

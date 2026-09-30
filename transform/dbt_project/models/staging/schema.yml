@@ -22,9 +22,9 @@ sources:
             description: Âge du patient
             tests:
               - not_null
-              - accepted_range:
-                  min: 0
-                  max: 120
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  max_value: 120
           - name: Gender
             description: Sexe du patient
             tests:
