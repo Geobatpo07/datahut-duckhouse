@@ -124,10 +124,11 @@ warn_return_any = false
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q -m \"not integration\" --cov=flight_server --cov=scripts --cov=datahut_duckhouse --cov-report=term-missing"
+addopts = "-ra -q -m \"not integration and not network\" --cov=flight_server --cov=scripts --cov=datahut_duckhouse --cov-report=term-missing"
 testpaths = ["tests"]
 markers = [
     "integration: needs Docker (Postgres/MySQL containers) - run explicitly with -m integration",
+    "network: needs a real external network/API - run explicitly with -m network",
 ]
 
 [tool.coverage.run]

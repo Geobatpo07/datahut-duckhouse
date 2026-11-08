@@ -118,8 +118,10 @@ class SourceConfig(BaseModel):
             if not self.secret_ref:
                 raise ValueError(f"'{self.name}': family 'sql' needs 'secret_ref'.")
         elif self.family == "files":
-            if not self.path:
-                raise ValueError(f"'{self.name}': family 'files' needs 'path'.")
+            if not self.path and not self.http_url:
+                raise ValueError(
+                    f"'{self.name}': family 'files' needs 'path' or 'http_url'."
+                )
             if not self.format:
                 raise ValueError(f"'{self.name}': family 'files' needs 'format'.")
             if self.format not in FILE_FORMATS:
