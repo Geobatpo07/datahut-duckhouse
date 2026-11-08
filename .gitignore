@@ -87,6 +87,7 @@ tests/data/Chinook_Sqlite.sqlite
 .dlt/
 ingestion/dlt/_pipeline_data/
 scripts/_bench_work/
+scripts/_demo_warehouse/
 
 # PyBuilder
 .pybuilder/
