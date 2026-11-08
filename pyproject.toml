@@ -14,7 +14,12 @@ dependencies = [
     "numpy>=1.24.0",
     "grpcio",
     "grpcio-tools",
-    "xorq==0.2.4",
+    "xorq==0.4.11",
+    # xorq 0.4.x's pyiceberg backend unconditionally imports its postgres backend,
+    # which needs this — upstream declares it only under optional extras
+    # (bigquery/databricks), not as a core dependency.
+    "adbc-driver-manager>=1.0.0",
+    "psycopg>=3.1",
     "pyiceberg[sql-sqlite]>=0.9.0",
     "dbt-core>=1.9.0",
     "dbt-duckdb>=1.9.2",
