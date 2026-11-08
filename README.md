@@ -121,6 +121,36 @@ uv run dhd query "SELECT * FROM sales"
 If the server isn't running it fails with a clear message rather than hanging.
 `dhd branch …` is a placeholder until Nessie lands (ADR-0002 / Phase 3).
 
+#### Verified round trip without Docker
+
+The commands above were run and verified as two separate processes (not Docker,
+not in-process tests) against a local filesystem warehouse — no MinIO/S3
+required:
+
+```bash
+# shell 1 — start the server against a local warehouse instead of MinIO
+ICEBERG_WAREHOUSE= \
+ICEBERG_WAREHOUSE_PATH=/tmp/dhd_demo/warehouse \
+DUCKDB_PATH=/tmp/dhd_demo/duckhouse.duckdb \
+  uv run python -m flight_server.app.app_xorq
+
+# shell 2
+uv run dhd create-table sales data/sales.csv
+uv run dhd list-tables
+uv run dhd insert sales data/sales_new.csv --mode append
+uv run dhd query "SELECT * FROM sales"
+```
+
+`ICEBERG_WAREHOUSE=` (empty) is required if you have a `.env` with
+`ICEBERG_WAREHOUSE=s3://…` set — `python-dotenv` won't override a variable
+already present in the environment, so an explicit empty value is how you
+force the local-path fallback. This confirms the Flight write/read loop
+(`create-table` → `insert` → `query` → `list-tables`) end to end without
+Docker. The full `docker-compose up` stack (MinIO + Trino + the containers)
+was **not** re-verified in this pass — the Docker daemon wasn't reachable in
+this environment; see step 4 above for what is and isn't expected to work
+there.
+
 #### Engines: `--engine flight` (default) vs `--engine pyiceberg`
 
 `dhd --engine pyiceberg <cmd>` (or `DHD_ENGINE=pyiceberg`) skips the Flight
