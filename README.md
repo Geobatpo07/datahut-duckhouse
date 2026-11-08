@@ -129,6 +129,13 @@ uv run dhd query "SELECT * FROM sales"
 If the server isn't running it fails with a clear message rather than hanging.
 `dhd branch …` is a placeholder until Nessie lands (ADR-0002 / Phase 3).
 
+Loading a configured source (SQL/files/REST, see
+[docs/INGESTION.md](docs/INGESTION.md)) is one command:
+
+```bash
+uv run dhd ingest run sqlite_chinook
+```
+
 > ⚠️ **The Flight client and server must run the same Python minor version**
 > (3.11 or 3.13 — see [the Python-version matrix](#-python-version-matrix-client-and-server-must-match)
 > below). A mismatch used to segfault `dhd create-table`/`dhd query`; `dhd`
@@ -392,6 +399,7 @@ datahut-duckhouse/
 │   │                     # docs/INGESTION_ARCHITECTURE.md for the layer map
 │   ├── data/             # Source CSV + local duckhouse.duckdb
 │   ├── __init__.py       # public API: list_sources, run_source, ...
+│   ├── cli.py            # the `dhd ingest` command group
 │   ├── config/           # SourceConfig (pydantic), validation rules, sources.yml
 │   ├── connectors/       # sql.py, files.py, rest.py -- one extractor each
 │   ├── engine/           # DltIngestor (orchestration) + incremental-cursor state
@@ -483,8 +491,8 @@ uv run python scripts/demo.py --source mysql_chinook
 # joignable : replace/append s'écrivent via lui, merge directement en
 # pyiceberg sous condition -- voir docs/INGESTION.md, "single writer").
 # Le registre couvre 3 familles (sql/files/rest) :
-uv run dhd sources list
-uv run dhd ingest-dlt --source sqlite_chinook   # ou --all, ou --dry-run
+uv run dhd ingest list
+uv run dhd ingest run sqlite_chinook   # ou --all, ou --dry-run
 
 # Tests d'intégration réels (besoin du stack Docker + du fichier SQLite) :
 uv run python scripts/fetch_chinook.py

@@ -110,9 +110,14 @@ def test_sinks_do_not_know_dlt_or_connectors():
     assert not offenders, f"sinks/ imported forbidden modules: {offenders}"
 
 
-def test_cli_adapter_modules_import_only_the_public_api():
+def test_ingestion_cli_module_imports_only_the_public_api():
+    """``ingestion/cli.py`` itself -- the real "cli.py n'importe que l'API
+    publique" rule. ``datahut_duckhouse/cli.py`` is allowed one deliberate
+    deep import (``ingestion.cli``, to mount the group); that one file
+    aside, ``datahut_duckhouse/ingest_dlt.py`` (the deprecated-alias
+    adapter) is held to the same rule as ``ingestion/cli.py``."""
     cli_modules = [
-        REPO_ROOT / "datahut_duckhouse" / "cli.py",
+        INGESTION_DIR / "cli.py",
         REPO_ROOT / "datahut_duckhouse" / "ingest_dlt.py",
     ]
     offenders = {}

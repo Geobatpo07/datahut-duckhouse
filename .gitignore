@@ -88,8 +88,9 @@ tests/data/Chinook_Sqlite.sqlite
 ingestion/_pipeline_data/
 scripts/_bench_work/
 # Vague 1b: incremental-cursor state (engine/state.py), the run log's local
-# SQLite fallback (runs/store.py), and the files connector's HTTP download
-# cache -- all ephemeral, per-machine.
+# SQLite fallback (runs/store.py), the files connector's HTTP download
+# cache, and dhd ingest's full-traceback logs (ingestion/cli.py) -- all
+# ephemeral, per-machine.
 ingestion/_state/
 ingestion/_cache/
 scripts/_dlt_eval_work/

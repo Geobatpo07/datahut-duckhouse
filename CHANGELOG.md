@@ -43,6 +43,42 @@
   after its first JSON round trip, which `dlt.sources.incremental` rejected.
   See [docs/INGESTION.md](docs/INGESTION.md) for how to add a source.
 
+### `dhd ingest` restructuring (`feat/dhd-ingest`), step B: the CLI
+
+- **New `dhd ingest` command group**, a thin layer over `ingestion`'s
+  public API (`ingestion/cli.py`): `run <source>` (`--table`, `--dry-run`,
+  `--full-refresh`/`--yes`), `run --all` (`--family`, `--fail-fast`,
+  isolated per source with a summary at the end), `list` (name, family,
+  schedule, last run status), `validate` (registry + secret presence by
+  name + catalog coherence for any `merge` source), `runs` (`--source`,
+  `--last`, `--status`), `new <family> <name>`. `dlt` never appears in
+  this command's help text or error messages -- only in
+  [docs/INGESTION_ARCHITECTURE.md](docs/INGESTION_ARCHITECTURE.md)'s
+  architecture note.
+- Exit codes: 0 success, 1 at least one source failed, 2 a configuration
+  problem (bad registry, missing secret, mismatched catalog) --
+  distinguished by exception type, not by guessing from the message.
+- `--dry-run` now does a real extraction (a real DB query, a real API
+  call) and reports actual row counts, writing nothing at all -- verified
+  by comparing a table's Iceberg snapshot count before and after.
+  `--full-refresh` drops the source's incremental cursor
+  (`ingestion.engine.state.clear_source`) so the next run starts from
+  scratch, same as a brand-new source.
+- Error messages now name the probable cause and the action to take, and
+  never leak a secret's resolved value (`SourceConfig.redact`, tested with
+  a fake secret value) -- a full traceback goes to a local log file
+  instead, whose path is printed alongside the clean message.
+- `dhd ingest-dlt` and `dhd sources validate`/`list` remain as deprecated
+  aliases (print a one-line warning to stderr, otherwise unchanged).
+  `dhd drop-table` stays outside the `ingest` group.
+- Tests: `tests/ingestion/test_cli.py` (16 cases: option parsing, exit
+  codes, `--all`/`--fail-fast`, secret redaction, both deprecated aliases,
+  plus a real-Flight-server class covering dry-run/run/rerun/list/runs
+  against the real `sqlite_chinook` source); `tests/ingestion/test_engine.py`
+  gained a crash-then-resume class (a connector that raises mid-extraction,
+  simulating a kill before any commit) for `replace` and `merge`. 167
+  tests passing overall.
+
 ### `dhd ingest` restructuring (`feat/dhd-ingest`), step A: module layout
 
 - **`ingestion/` is now a real, importable package** -- the pre-existing

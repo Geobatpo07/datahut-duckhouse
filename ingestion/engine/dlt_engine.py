@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pyarrow.parquet as papq
 
-from ingestion.config.models import SourceConfig
+from ingestion.config.models import SourceConfig, SourcesConfigError
 from ingestion.connectors import registry as connector_registry
 from ingestion.connectors.sql import MissingDriverError
 from ingestion.engine.base import RunResult, TableResult
@@ -76,16 +76,27 @@ class DltIngestor:
         try:
             sink = self._sink_for(source)
         except CatalogMismatchError as exc:
-            self.run_log.record(source.name, "*", t0, time.time(), 0, "error", str(exc))
-            raise
+            message = source.redact(str(exc))
+            self.run_log.record(source.name, "*", t0, time.time(), 0, "error", message)
+            raise type(exc)(message) from exc
 
         try:
             written = connector.build_resources(source, self.work_dir)
-        except MissingDriverError:
-            raise
+        except (MissingDriverError, SourcesConfigError) as exc:
+            # Both are configuration errors (missing secret, bad dialect,
+            # ...), not run failures -- the caller (ingestion/cli.py) maps
+            # them to exit code 2, not 1. Still logged, still redacted.
+            message = source.redact(str(exc))
+            self.run_log.record(source.name, "*", t0, time.time(), 0, "error", message)
+            raise type(exc)(message) from exc
         except Exception as exc:  # noqa: BLE001 - attach the source name, re-raise
-            self.run_log.record(source.name, "*", t0, time.time(), 0, "error", str(exc))
-            raise ConnectorError(f"'{source.name}' ({source.family}): {exc}") from exc
+            message = source.redact(
+                f"'{source.name}' ({source.family}): probable cause: {exc}. "
+                f"Action: check {source.secret_ref or 'the source'}'s "
+                f"connectivity/config, then retry."
+            )
+            self.run_log.record(source.name, "*", t0, time.time(), 0, "error", message)
+            raise ConnectorError(message) from exc
 
         result = RunResult(source=source.name)
         for table_name, parquet_path in written.items():
@@ -103,10 +114,15 @@ class DltIngestor:
                     primary_key=source.primary_key,
                 )
             except (SchemaContractViolationError, SinkError) as exc:
-                self.run_log.record(
-                    source.name, table_name, table_t0, time.time(), 0, "error", str(exc)
+                message = source.redact(
+                    f"'{source.name}'.'{table_name}': probable cause: {exc}. "
+                    f"Action: check schema_contract/write_disposition for "
+                    f"this source in sources.yml."
                 )
-                raise
+                self.run_log.record(
+                    source.name, table_name, table_t0, time.time(), 0, "error", message
+                )
+                raise type(exc)(message) from exc
             result.tables.append(
                 TableResult(table=table_name, verb=verb, rows=data.num_rows)
             )

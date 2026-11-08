@@ -46,3 +46,11 @@ def write_last_value(source_name: str, resource_name: str, value: Any) -> None:
     path = _state_path(source_name, resource_name)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"last_value": value}, default=str))
+
+
+def clear_source(source_name: str) -> None:
+    """Drop every tracked cursor for ``source_name`` (``--full-refresh``):
+    the next extraction has no ``last_value`` to bound it, so it pulls
+    everything from scratch, same as a brand-new source's first run."""
+    for path in _state_dir().glob(f"{source_name}__*.json"):
+        path.unlink(missing_ok=True)

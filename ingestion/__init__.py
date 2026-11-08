@@ -16,14 +16,18 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import pyarrow.parquet as papq
+
 from ingestion.config.models import SourceConfig, SourcesConfigError
 from ingestion.config.registry import SOURCES_YML, get_source, load_sources
 from ingestion.connectors import registry as _connector_registry
 from ingestion.connectors.sql import MissingDriverError
+from ingestion.engine import state as _state
 from ingestion.engine.base import RunResult, TableResult
 from ingestion.engine.dlt_engine import DEFAULT_WORK_DIR, ConnectorError, DltIngestor
+from ingestion.runs.store import read_runs
 from ingestion.sinks.base import SchemaContractViolationError, SinkError
-from ingestion.sinks.catalog_guard import CatalogMismatchError
+from ingestion.sinks.catalog_guard import CatalogMismatchError, check_same_catalog
 
 __all__ = [
     "SOURCES_YML",
@@ -39,7 +43,10 @@ __all__ = [
     "list_sources",
     "validate_registry",
     "extract_source",
+    "dry_run_source",
     "run_source",
+    "read_runs",
+    "check_same_catalog",
 ]
 
 
@@ -68,12 +75,36 @@ def extract_source(
     return connector.build_resources(source, work_dir)
 
 
+def _with_overrides(source: SourceConfig, tables: list[str] | None) -> SourceConfig:
+    if tables:
+        return source.model_copy(update={"resources": list(tables)})
+    return source
+
+
+def dry_run_source(name: str, tables: list[str] | None = None) -> RunResult:
+    """Resolve ``name``, extract it (a real connection -- for ``sql``,
+    actually querying the database; for ``rest``, actually hitting the
+    API), and report what *would* be written, without touching any sink
+    or the run log at all. Verified (``tests/ingestion/test_cli.py``) by
+    comparing a table's Iceberg snapshot count before and after: unchanged.
+    """
+    source = _with_overrides(get_source(name), tables)
+    written = extract_source(source)
+    result = RunResult(source=source.name)
+    for table_name, parquet_path in written.items():
+        rows = papq.read_table(parquet_path).num_rows
+        result.tables.append(TableResult(table=table_name, verb="planned", rows=rows))
+    return result
+
+
 def run_source(
     name: str,
     *,
     flight_backend,
     pyiceberg_connect: Callable[[], object],
     run_log_echo: Callable[[str], None] = print,
+    tables: list[str] | None = None,
+    full_refresh: bool = False,
 ) -> RunResult:
     """Extract and load ``name`` (one entry from ``sources.yml``).
 
@@ -83,7 +114,18 @@ def run_source(
     ``pyiceberg_connect`` (only called if a 'merge' source is actually
     encountered) and gated by a catalog-identity check against
     ``flight_backend`` -- see ``sinks/catalog_guard.py``.
+
+    ``tables`` narrows extraction to specific resources, same as editing
+    ``resources`` in ``sources.yml`` for just this run. ``full_refresh``
+    drops this source's incremental cursor first (``engine.state.
+    clear_source``), so extraction starts from scratch exactly like a
+    brand-new source's first run -- safe for every ``write_disposition``
+    that can carry ``incremental`` (``merge``, or ``replace`` with its
+    warning): `incremental` + `append` is rejected at validation time, so
+    that unsafe combination can't reach here.
     """
-    source = get_source(name)
+    source = _with_overrides(get_source(name), tables)
+    if full_refresh:
+        _state.clear_source(source.name)
     engine = DltIngestor(flight_backend, pyiceberg_connect, run_log_echo=run_log_echo)
     return engine.run(source)

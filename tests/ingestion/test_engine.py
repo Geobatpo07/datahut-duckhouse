@@ -358,3 +358,67 @@ class TestCatalogGuard:
         )
         with pytest.raises(CatalogMismatchError, match="different Iceberg"):
             engine.run(source)
+
+
+class TestCrashThenResume:
+    """A process killed mid-run (step 5's crash-resume experiment,
+    docs/DLT_EVAL.md) leaves no partial commit -- Iceberg only exposes a
+    snapshot once a write fully completes -- so a resumed run never
+    duplicates or loses data under ``replace``/``merge``. Simulated here
+    as a connector that raises instead of returning (the "crash" point:
+    before any table's data is even handed to a sink), proving the engine
+    itself adds no partial state of its own on top of Iceberg's atomicity."""
+
+    def _crashing_connector(self):
+        def _boom(source, work_dir):
+            raise RuntimeError("simulated crash mid-extraction")
+
+        return types.SimpleNamespace(build_resources=_boom)
+
+    def _run_with_crash_then_resume(
+        self, flight_server, tmp_path, monkeypatch, write_disposition, primary_key=None
+    ):
+        from datahut_duckhouse.connection import connect as flight_connect
+
+        source = _make_source(
+            name="s", write_disposition=write_disposition, primary_key=primary_key
+        )
+        t1 = pa.table({"id": [1, 2], "name": ["a", "b"]})
+
+        monkeypatch.setattr(
+            dlt_engine_module.connector_registry,
+            "get",
+            lambda family: self._crashing_connector(),
+        )
+        from datahut_duckhouse.ingest import connect as pyiceberg_connect
+
+        crashing_engine = DltIngestor(flight_connect(), pyiceberg_connect)
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            crashing_engine.run(source)
+        assert "s_t" not in flight_connect().list_tables()  # no partial commit
+
+        resumed = _engine(
+            flight_connect(),
+            monkeypatch,
+            {"s_t": _write_parquet(tmp_path, "resume", t1)},
+        )
+        resumed.run(source)
+        rows = _rows_via_flight("s_t")
+        assert {r["id"] for r in rows} == {1, 2}
+        return rows
+
+    def test_replace_resumes_without_duplication(
+        self, flight_server, tmp_path, monkeypatch
+    ):
+        rows = self._run_with_crash_then_resume(
+            flight_server, tmp_path, monkeypatch, "replace"
+        )
+        assert len(rows) == 2  # not 4 -- the crashed run committed nothing
+
+    def test_merge_resumes_without_duplication(
+        self, flight_server, tmp_path, monkeypatch
+    ):
+        rows = self._run_with_crash_then_resume(
+            flight_server, tmp_path, monkeypatch, "merge", primary_key=["id"]
+        )
+        assert len(rows) == 2  # not 4 -- the crashed run committed nothing

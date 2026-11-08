@@ -18,6 +18,7 @@ import pyarrow.csv as pacsv
 import pyarrow.json as pajson
 import pyarrow.parquet as papq
 
+import ingestion.cli
 from datahut_duckhouse import __version__
 from datahut_duckhouse.connection import FlightUnavailableError, connect, flight_target
 from datahut_duckhouse.flight_version_guard import FlightPythonVersionMismatchError
@@ -130,6 +131,15 @@ def _connect_or_die(ctx: click.Context):
         raise click.ClickException(str(exc)) from exc
 
 
+def _pyiceberg_connect():
+    from datahut_duckhouse.ingest import connect as ingest_connect
+
+    return ingest_connect()
+
+
+ingestion.cli.configure(connect, _pyiceberg_connect)
+
+
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, prog_name="dhd")
 @click.option(
@@ -144,6 +154,9 @@ def _connect_or_die(ctx: click.Context):
 def cli(ctx: click.Context, engine: str | None) -> None:
     """DataHut-DuckHouse CLI - drive the Flight server (Iceberg + DuckDB)."""
     ctx.obj = {"engine": engine}
+
+
+cli.add_command(ingestion.cli.ingest_group)
 
 
 @cli.command("list-tables")
@@ -285,9 +298,14 @@ def ingest_dlt(source_name: str | None, run_all: bool, dry_run: bool) -> None:
     query``/``dhd list-tables`` right away. ``merge`` still writes directly
     via pyiceberg, but only once this client is proven to share the Flight
     server's own Iceberg catalog -- otherwise this exits with code 2. Each
-    source's write_disposition (ingestion/dlt/sources.yml) controls whether
-    a re-run replaces, appends, or merges -- see docs/INGESTION.md.
+    source's write_disposition (ingestion/config/sources.yml) controls
+    whether a re-run replaces, appends, or merges -- see docs/INGESTION.md.
     """
+    click.echo(
+        "warning: `dhd ingest-dlt` is deprecated, use `dhd ingest run` "
+        "(--source NAME -> SOURCE_NAME positional, --all stays --all).",
+        err=True,
+    )
     if source_name and run_all:
         raise click.ClickException("Pass either --source NAME or --all, not both.")
     if not source_name and not run_all:
@@ -337,12 +355,17 @@ def ingest_dlt(source_name: str | None, run_all: bool, dry_run: bool) -> None:
 
 @cli.group()
 def sources() -> None:
-    """Inspect ingestion/config/sources.yml (the source registry)."""
+    """Deprecated: use `dhd ingest list`/`dhd ingest validate` instead."""
 
 
 @sources.command("validate")
 def sources_validate() -> None:
-    """Validate sources.yml against the registry schema (readable line/field errors)."""
+    """Deprecated, use `dhd ingest validate`. Validate sources.yml against
+    the registry schema (readable line/field errors)."""
+    click.echo(
+        "warning: `dhd sources validate` is deprecated, use " "`dhd ingest validate`.",
+        err=True,
+    )
     from ingestion import SourcesConfigError, validate_registry
 
     try:
@@ -358,7 +381,12 @@ def sources_validate() -> None:
 
 @sources.command("list")
 def sources_list() -> None:
-    """List configured sources: name, family, connector, write_disposition, schedule, network."""
+    """Deprecated, use `dhd ingest list`. List configured sources: name,
+    family, connector, write_disposition, schedule, network."""
+    click.echo(
+        "warning: `dhd sources list` is deprecated, use `dhd ingest list`.",
+        err=True,
+    )
     from ingestion import SourcesConfigError, list_sources
 
     try:

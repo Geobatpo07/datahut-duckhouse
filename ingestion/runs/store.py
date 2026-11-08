@@ -46,6 +46,51 @@ def _iso(epoch_s: float) -> str:
     return datetime.datetime.fromtimestamp(epoch_s, tz=datetime.UTC).isoformat()
 
 
+def read_runs(
+    flight_backend=None,
+    *,
+    source: str | None = None,
+    status: str | None = None,
+    last: int | None = None,
+) -> list[dict]:
+    """``dhd ingest runs``: read back logged rows, newest first. Tries
+    ``flight_backend`` (if given and the table exists there) first, then
+    the local SQLite fallback -- whichever one a given run actually landed
+    in."""
+    rows: list[dict] = []
+    if flight_backend is not None:
+        try:
+            if RUN_LOG_TABLE in set(flight_backend.list_tables()):
+                rows = (
+                    flight_backend.sql(f"SELECT * FROM {RUN_LOG_TABLE}")
+                    .to_pyarrow()
+                    .to_pylist()
+                )
+        except Exception:  # noqa: BLE001 - fall back to the local file below
+            rows = []
+
+    fallback_db = _fallback_db()
+    if fallback_db.exists():
+        with sqlite3.connect(fallback_db) as conn:
+            conn.row_factory = sqlite3.Row
+            local_rows = [
+                dict(r) for r in conn.execute("SELECT * FROM ingest_runs").fetchall()
+            ]
+        # Rows can legitimately exist in both places (an early run fell
+        # back, a later one didn't) -- keep both, de-duplicated by run_id.
+        seen = {r["run_id"] for r in rows}
+        rows.extend(r for r in local_rows if r["run_id"] not in seen)
+
+    if source is not None:
+        rows = [r for r in rows if r["source"] == source]
+    if status is not None:
+        rows = [r for r in rows if r["status"] == status]
+    rows.sort(key=lambda r: r["started_at"], reverse=True)
+    if last is not None:
+        rows = rows[:last]
+    return rows
+
+
 class RunLog:
     """``backend`` is a connected Flight backend (duck-typed: anything with
     ``list_tables``/``create_table``/``con.upload_table``) -- not a

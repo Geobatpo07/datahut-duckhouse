@@ -89,6 +89,17 @@ class SourceConfig(BaseModel):
     def prefix(self) -> str:
         return self.target_prefix or self.name
 
+    def redact(self, message: str) -> str:
+        """Strip this source's secret *value* (never logged by name --
+        ``secret_ref`` already is just the env var name) out of an error
+        message before it reaches a log, the run log, or the CLI."""
+        if not self.secret_ref:
+            return message
+        value = os.getenv(self.secret_ref)
+        if not value:
+            return message
+        return message.replace(value, "***")
+
     @property
     def connection_url(self) -> str:
         """sql family: read ``secret_ref``'s environment variable."""

@@ -1,9 +1,10 @@
-# Ingestion: the source registry (Vague 1b)
+# Ingestion: `dhd ingest`
 
-How to add a source to `dhd ingest-dlt`, and what each registry field
-means. For the module layout behind this command (``ingestion/``'s
-layers and their dependency rules), see
-[docs/INGESTION_ARCHITECTURE.md](INGESTION_ARCHITECTURE.md). Results from
+How to add a source and run it with `dhd ingest`, and what each registry
+field means. For the module layout behind this command (``ingestion/``'s
+layers, dependency rules, and the extraction engine under the hood), see
+[docs/INGESTION_ARCHITECTURE.md](INGESTION_ARCHITECTURE.md) -- the one
+place this doc names the extraction library (dlt) at all. Results from
 actually running this at scale (incremental, schema evolution,
 crash-resume, volume) are in [docs/DLT_EVAL.md](DLT_EVAL.md).
 
@@ -12,7 +13,7 @@ crash-resume, volume) are in [docs/DLT_EVAL.md](DLT_EVAL.md).
 1. **Generate the skeleton.**
 
    ```bash
-   uv run python scripts/new_source.py sql my_source     # or: files | rest
+   uv run dhd ingest new sql my_source     # or: files | rest
    ```
 
    This appends a `TODO`-annotated entry to `ingestion/config/sources.yml`
@@ -26,10 +27,14 @@ crash-resume, volume) are in [docs/DLT_EVAL.md](DLT_EVAL.md).
 3. **Validate.**
 
    ```bash
-   uv run dhd sources validate
+   uv run dhd ingest validate
    ```
 
-   Reports every problem with its line and field, not just the first one.
+   Reports every problem with its line and field, not just the first one
+   -- plus whether each source's secret is present (by name, never its
+   value) and, for any `merge` source, whether this client and the Flight
+   server agree on one catalog (see "Who actually writes to Iceberg"
+   below).
 
 4. **Pick `write_disposition` and `schema_contract`** (see below) --
    `replace` + `evolve` are safe defaults for a first pass.
@@ -37,33 +42,71 @@ crash-resume, volume) are in [docs/DLT_EVAL.md](DLT_EVAL.md).
 5. **Run it.**
 
    ```bash
-   uv run dhd ingest-dlt --source my_source --dry-run   # sanity check, no I/O
-   uv run dhd ingest-dlt --source my_source
+   uv run dhd ingest run my_source --dry-run   # sanity check, no I/O
+   uv run dhd ingest run my_source
    uv run pytest tests/test_source_my_source.py
    ```
 
 No code change is needed anywhere in `ingestion/` for any of this --
 adding a source is purely a `sources.yml` edit (see
 [docs/INGESTION_ARCHITECTURE.md](INGESTION_ARCHITECTURE.md) for the
-module layout). `--all` runs every
-configured source; `--dry-run` validates and prints the resolved plan
-(family, connector, resources, write_disposition, schema_contract, whether
-it hits a real network) without touching Iceberg or the network at all.
+module layout).
+
+## `dhd ingest` commands
+
+```
+dhd ingest run <source> [--table T ...] [--dry-run] [--full-refresh] [--yes]
+dhd ingest run --all [--family sql|files|rest] [--fail-fast]
+dhd ingest list                        # name, family, schedule, last run status
+dhd ingest validate [<source>]         # registry, secrets (names only), catalog coherence
+dhd ingest runs [--source S] [--last N] [--status failed]
+dhd ingest new <family> <name>         # registry entry + skeleton test
+```
+
+- **Exit codes**: `0` success; `1` at least one source failed to run;
+  `2` a configuration problem (bad `sources.yml`, a missing secret, or a
+  `merge` source whose client and Flight server don't share a catalog).
+- `--table` narrows extraction to specific resources, same as editing
+  `resources` for just this run -- needs a single source, not `--all`.
+- `--dry-run` resolves the source, connects for real (querying a `sql`
+  database, hitting a `rest` API), and reports exactly what would be
+  written, without touching any sink or the run log at all -- verified by
+  comparing a table's Iceberg snapshot count before and after: unchanged
+  (`tests/ingestion/test_cli.py::TestRealFlightServer::test_dry_run_writes_nothing`).
+- `--full-refresh` drops this source's incremental cursor first, so
+  extraction starts from scratch exactly like a brand-new source's first
+  run -- asks for confirmation unless `--yes` (it can mean a lot of
+  re-extracted data for a `merge` source, or a full table rewrite for
+  `replace`).
+- `--all` runs every source isolated from the others: one failure doesn't
+  stop the rest (prints a per-source summary at the end) unless
+  `--fail-fast`, which stops immediately. `--family` narrows `--all` to
+  one connector family.
+- `dhd ingest validate`/`dhd ingest run`/`dhd ingest list`/`dhd ingest
+  runs` all go through the same Python-version guard as every other `dhd`
+  command against the Flight server (`flight_version_guard.py`) --
+  a mismatched client/server exits with a clear message before anything
+  else runs.
+- **Deprecated aliases**: `dhd ingest-dlt` (`--source`/`--all`/`--dry-run`)
+  and `dhd sources validate`/`dhd sources list` still work exactly as
+  before, now printing a one-line deprecation warning (stderr) pointing
+  at the `dhd ingest` equivalent. `dhd drop-table` is unrelated to
+  ingestion and stays a top-level `dhd` command.
 
 ## The three families
 
 | Family | Connector module | What it wraps |
 |---|---|---|
-| `sql` | `ingestion/connectors/sql.py` | dlt's `sql_database` (SQLAlchemy: sqlite3 stdlib, psycopg2, pymysql, pymssql) |
+| `sql` | `ingestion/connectors/sql.py` | A SQLAlchemy-backed extractor (sqlite3 stdlib, psycopg2, pymysql, pymssql) |
 | `files` | `ingestion/connectors/files.py` | Local CSV/JSON/Parquet via pyarrow, optionally fetched over HTTP first (`http_url`) |
-| `rest` | `ingestion/connectors/rest.py` | dlt's declarative `rest_api_source` |
+| `rest` | `ingestion/connectors/rest.py` | A declarative REST extractor (base URL + per-resource path/params/paginator) |
 
 Every connector exposes the same contract: `build_resources(source,
 work_dir) -> {prefixed_resource_name: parquet_path}`, one Parquet file per
 table/resource, written in one call. `ingestion/connectors/registry.py`
 dispatches to the right connector by `source.family` -- this is what lets
-task 2's "no code change per source" hold across all three families, not
-just `sql`.
+"no code change per source" hold across all three families, not just
+`sql`.
 
 ### `sql`
 
@@ -85,12 +128,13 @@ schema stays flat.
 ### `rest`
 
 Needs `base_url` and `resources` (one per REST endpoint/path).
-`rest_options` is a free-form dict passed straight through to dlt's own
-`client`/`endpoint` config (`headers`, `params`, `paginator`) -- see
-`sources.yml`'s `open_brewery_db` entry for a real paginated example
-(`page_number` paginator, capped via `maximum_page` so a routine run stays
-bounded). Mark `network: true` -- its connector test then carries
-`@pytest.mark.network` and is excluded by default, same as `integration`.
+`rest_options` is a free-form dict passed straight through to the
+extractor's own `client`/`endpoint` config (`headers`, `params`,
+`paginator`) -- see `sources.yml`'s `open_brewery_db` entry for a real
+paginated example (`page_number` paginator, capped via `maximum_page` so a
+routine run stays bounded). Mark `network: true` -- its connector test
+then carries `@pytest.mark.network` and is excluded by default, same as
+`integration`.
 
 ## write_disposition
 
@@ -116,78 +160,52 @@ inherently wrong if a source genuinely re-pulls its whole window at once.
 
 ## Who actually writes to Iceberg (single writer, ADR-0001)
 
-**Superseded 2026-11-08** (`feat/dhd-ingest`, step 0 of the second
-follow-up review) -- the finding below ("the writer is always the client")
-was verified and is kept for the record, but it is no longer how `dhd
-ingest-dlt` behaves. The fix:
-
 | `write_disposition` | Who writes | How |
 |---|---|---|
 | `replace` | **the Flight server** | `FlightSink` -- `con.upload_table(mode="replace")`, the same action `dhd create-table`/`insert` use |
 | `append` | **the Flight server** | `FlightSink` -- `con.upload_table(mode=None)` (create-or-append) |
-| `merge` | the client, direct via pyiceberg | `DirectSink`, gated by `catalog_guard.check_same_catalog` |
+| `merge` | the client, direct via pyiceberg | `DirectSink`, gated by a catalog-identity check |
 
-Reproduced live against the real Docker Flight server before fixing it:
-`CHINOOK_SQLITE_URL=... dhd ingest-dlt --source sqlite_chinook` created
-tables that were then **invisible** to `dhd query`/`dhd list-tables`
-(`Catalog Error: Table ... does not exist`) -- two physically different
-SQLite catalog files, one in the `flight_data` Docker named volume, one
-on the host (`ingestion/data/pyiceberg_catalog.db`, confirmed to already
-hold leftover tables from earlier, unrelated sessions). See
-`ingestion/sinks/flight_sink.py`.
+**Verified 2026-11-08**: before this was fixed, a table loaded this way
+was written pyiceberg-direct and was **invisible** to `dhd query`/`dhd
+list-tables` -- two physically different SQLite catalog files, one in the
+Flight server's Docker named volume, one on the host. Fix:
+`replace`/`append` now write through the Flight server itself
+(`ingestion/sinks/flight_sink.py`), so a table lands exactly where `dhd
+query` already looks. One real consequence worth stating plainly: `dhd
+ingest run` now *always* needs a reachable Flight server, for every
+`write_disposition`, not a serverless batch path.
 
 `merge` still has no Flight-level equivalent: `HybridBackend` inherits a
 working `upsert()` *method* unmodified from xorq's `PyIcebergBackend`, but
-no Flight action or `UploadMode` reaches it over the wire
-(`xorq.flight.server.put_table` only dispatches create/append/replace --
-adding one is real scope, see "Next" below, deliberately not done here).
-So `merge` still writes directly via pyiceberg from the client -- but
-**only once proven to be a single writer**:
-`ingestion/sinks/catalog_guard.py` registers a tiny action at runtime
-(xorq's own `add-action`, no `HybridBackend`/xorq change -- same technique
-as `flight_version_guard.py`) that reports the server's resolved catalog
-URI and warehouse path (read straight off the live `HybridBackend`
-instance), and compares them to the client's own
-(`PyIcebergEngine.uri`/`.warehouse_path`). A mismatch exits **2** with
-both catalogs named and a concrete fix, instead of silently writing to a
-second, invisible catalog.
+no Flight action reaches it over the wire. So `merge` still writes
+directly via pyiceberg from the client -- but **only once proven to be a
+single writer**: `ingestion/sinks/catalog_guard.py` registers a tiny
+action at runtime (xorq's own `add-action`, no `HybridBackend`/xorq
+change) that reports the server's resolved catalog URI and warehouse
+path, and compares them to the client's own. A mismatch exits **2** with
+both catalogs named and a concrete fix (also checked proactively by `dhd
+ingest validate` for every configured `merge` source), instead of
+silently writing to a second, invisible catalog.
 
-Schema evolution (`schema_contract: evolve`) under `append`, which used to
-mutate the table's Iceberg schema straight from the client, now needs the
-same thing server-side when the write itself moved there:
-`ingestion/sinks/flight_sink.py` adds one more dynamically registered
-action, reaching the server's own `.catalog` object (the exact one
-`HybridBackend` already exposes) to call the identical
-`update_schema().union_by_name(...).commit()` the old direct path used --
-again, no `HybridBackend` change.
-
-One consequence worth stating plainly: `dhd ingest-dlt`/`dhd ingest` now
-*always* needs a reachable Flight server, for every `write_disposition`,
-not just `merge` -- this is a real behavior change from Vague 1b, where
-the whole point of this command was to need no Flight server at all. That
-trade-off (visibility by default vs. a serverless batch path) was an
-explicit decision for this task, not a side effect.
-
-**Next** (not done here, estimate): a real `merge`-over-Flight needs (a) a
-new Flight action calling `server._conn.upsert(...)` -- small, same
-pattern as the two actions above, maybe half a day including tests; (b)
-deciding whether `UploadMode` grows a `MERGE` value (wire-protocol change,
-touches `xorq.flight.enums`/`server.put_table`, upstream-adjacent) or stays
-a bespoke action like schema-evolve (smaller, consistent with what's
-already here) -- the latter is the lower-risk default.
+**Next** (not done here, estimate): a real `merge`-over-Flight needs a new
+Flight action calling `server._conn.upsert(...)` -- small, same pattern as
+the catalog-identity/schema-evolution actions already in
+`ingestion/sinks/`, maybe half a day including tests.
 
 ## Incremental extraction
 
 ```yaml
 incremental:
   column: updated_at
-  type: timestamp   # or: bigint, etc. -- a dlt cursor type hint
+  type: timestamp   # or: bigint, etc. -- a cursor type hint
 ```
 
 Tracks the highest value of `column` seen so far in a small local JSON
 file per `(source, resource)` under `ingestion/_state/` (configurable via
 `DHD_INGEST_STATE_DIR`; gitignored -- this is a cursor, not data).
-**Verified caveat**: the lower bound is
+`dhd ingest run <source> --full-refresh` drops it, so the next run starts
+from scratch. **Verified caveat**: the lower bound is
 inclusive (`>=`), so any rows that happen to share the exact cursor value
 already recorded (e.g. a bulk-backfilled column where many rows got the
 same timestamp) are re-extracted on every subsequent run, not skipped --
@@ -219,18 +237,28 @@ never a contract concern -- pyiceberg already fills it with `null`.
 `secret_ref` is always an environment variable **name**, never a value --
 see `.devcontainer/.env.example` for the real variable names
 (`CHINOOK_POSTGRES_URL`, etc.). `sources.yml` itself never holds a
-connection string, API key, or password.
+connection string, API key, or password. `dhd ingest validate` reports
+whether each source's secret is *present* (set, non-empty), never its
+value; any error message that happens to echo a secret's resolved value
+(a driver's own error text, for instance) is redacted (`SourceConfig.
+redact`) before it reaches the CLI, the run log, or the full-traceback
+log file -- verified in `tests/ingestion/test_cli.py::
+test_secret_value_never_appears_in_output` with a fake secret value.
 
 ## Exploitation: the run log
 
-Every `dhd ingest-dlt` run logs one row per table to a `_ingest_runs`
-Iceberg table (source, table, start, end, duration, rows, status, error) --
-appended through the Flight server (same single-writer path as the data
-itself), so it costs no extra round trip and stays visible to `dhd query`.
-If that table can't be prepared or appended to, it falls back to a local
-SQLite file (`ingestion/_state/ingest_runs.db`, configurable via
+Every `dhd ingest run` logs one row per table to a `_ingest_runs`
+Iceberg table (source, table, start, end, duration, rows, commits,
+status, error) -- appended through the Flight server (same single-writer
+path as the data itself), so it costs no extra round trip and stays
+visible to `dhd query`/`dhd ingest runs`. If that table can't be prepared
+or appended to, it falls back to a local SQLite file
+(`ingestion/_state/ingest_runs.db`, configurable via
 `DHD_INGEST_RUN_LOG_DB`) and says so on stderr rather than silently
-dropping the row.
+dropping the row. An error message in the log is redacted the same way as
+everywhere else (see "Secrets" above) -- never a traceback; a full
+traceback instead goes to a local log file whose path `dhd ingest run`
+prints alongside the clean error message.
 
 Every table write -- whatever its `write_disposition` -- is exactly **one**
 Iceberg commit per run, regardless of how many Parquet chunks a connector
