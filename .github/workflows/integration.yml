@@ -11,6 +11,14 @@ on:
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.13"]
+    env:
+      # Picked up by docker-compose.yml's flight-server build args, so the
+      # image matches the client built two steps down -- see the Python-
+      # version matrix note there and in README.
+      PYTHON_VERSION: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -19,6 +27,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          python-version: ${{ matrix.python-version }}
 
       - name: Sync dependencies
         run: uv sync --frozen
