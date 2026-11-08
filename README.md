@@ -166,7 +166,7 @@ datahut-duckhouse/
 │       ├── trino_client.py
 │       ├── monitoring.py
 │       └── backends/hybrid_backend.py
-├── xorq/                 # standalone FastAPI orchestration API (xorq-service)
+├── orchestrator/         # standalone FastAPI orchestration API (xorq-service)
 ├── xorq-admin-dashboard/ # React/Vite admin UI, served by nginx (xorq-admin)
 ├── ingestion/data/       # Source CSV + local duckhouse.duckdb
 ├── scripts/              # Ingestion, queries, tenant management, dbt runner
@@ -223,7 +223,7 @@ yet. Concretely, as of this writing:
 - Tenants are declared in [`config/tenants/tenants.yml`](config/tenants/tenants.yml),
   a static list with no enforcement behind it.
 - `scripts/create_tenant.py` / `scripts/delete_tenant.py` drive an in-memory
-  `XORQOrchestrator` (`xorq/core.py`) — state does not survive a restart,
+  `XORQOrchestrator` (`orchestrator/core.py`) — state does not survive a restart,
   and there is no persistence (that's ADR-0003/Phase 4).
 - `dhd` and `HybridBackend` have no tenant concept at all — every table lives in
   one shared namespace.

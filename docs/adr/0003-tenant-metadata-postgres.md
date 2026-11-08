@@ -6,7 +6,7 @@
 
 ## Context
 
-`xorq/core.py`'s `XORQOrchestrator` (exposed over HTTP by `xorq/api.py`, run as the
+`orchestrator/core.py`'s `XORQOrchestrator` (exposed over HTTP by `orchestrator/api.py`, run as the
 `xorq-service` container) holds all tenant registration, dataset metadata, query
 metrics, and billing events **entirely in memory** — `self.tenants` is a plain Python
 dict, and `_load_metadata` is a no-op despite an `XORQ_STORAGE` environment variable
@@ -103,9 +103,9 @@ directly rather than staging through a stopgap.
        `billing_events` tables, mirroring the fields already tracked in
        `TenantMetadata`
 3. [ ] Introduce a migration tool (e.g. Alembic) and an initial migration
-4. [ ] Rewrite `XORQOrchestrator` in `xorq/core.py` to read/write through
+4. [ ] Rewrite `XORQOrchestrator` in `orchestrator/core.py` to read/write through
        Postgres instead of in-memory dicts/lists, keeping the same public methods
-       (`register_tenant`, `add_dataset`, `track_query_metric`, etc.) so `xorq/api.py`
+       (`register_tenant`, `add_dataset`, `track_query_metric`, etc.) so `orchestrator/api.py`
        does not need to change
 5. [ ] Add a health check + startup dependency (`depends_on: postgres`) for
        `xorq-service`, mirroring the existing pattern used for `minio`

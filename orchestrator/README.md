@@ -1,4 +1,4 @@
-# xorq/: XORQ Orchestration Layer for DataHut SaaS
+# orchestrator/: XORQ Orchestration Layer for DataHut SaaS
 
 This folder is the orchestration, registry, and metadata system for the DataHut-DuckHouse SaaS platform. XORQ is responsible for:
 

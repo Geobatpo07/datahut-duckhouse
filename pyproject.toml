@@ -96,7 +96,7 @@ warn_unused_configs = true
 ignore_missing_imports = true
 explicit_package_bases = true
 mypy_path = "."
-exclude = ['^\.venv/', '^xorq/']
+exclude = ['^\.venv/', '^orchestrator/']
 # The codebase is largely untyped; tighten these incrementally.
 disallow_untyped_defs = false
 warn_return_any = false

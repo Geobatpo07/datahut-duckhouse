@@ -18,7 +18,7 @@ services:
     container_name: xorq-service
     <<: *common-env
     environment:
-      XORQ_STORAGE: ${XORQ_STORAGE:-xorq/metadata.db}
+      XORQ_STORAGE: ${XORQ_STORAGE:-orchestrator/metadata.db}
     ports:
       - "9980:9980"
     restart: unless-stopped

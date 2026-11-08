@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-logger = logging.getLogger("xorq.core")
+logger = logging.getLogger("orchestrator.core")
 
 
 class TenantMetadata:
@@ -28,7 +28,7 @@ class TenantMetadata:
 class XORQOrchestrator:
     """Central multi-tenant registry, orchestrator and service discovery for the data platform."""
 
-    def __init__(self, storage_path: str = "xorq/metadata.db"):
+    def __init__(self, storage_path: str = "orchestrator/metadata.db"):
         self.tenants: dict[str, TenantMetadata] = {}
         self.catalog_index: dict[str, str] = {}  # mapping catalog -> tenant
         self.lock = Lock()
