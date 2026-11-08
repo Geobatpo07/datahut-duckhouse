@@ -101,8 +101,12 @@ stays at the repo root. VS Code users can also "Reopen in Container" — the
 [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) brings up the
 same stack as a dev environment.
 
-`minio`, `minio-setup`, `flight-server` and `xorq-admin` build and come up clean.
-`trino` does not — see [Known gaps](#-known-gaps).
+`minio`, `minio-setup`, `flight-server` and `xorq-admin` build and come up
+clean (verified 2026-11-08: full `--build` from a cold image cache took ~4
+minutes; `minio`, `xorq-service` and `flight-server` report healthy within
+~15s of starting, `xorq-admin` within ~30s). `trino` does not — see
+[Known gaps](#-known-gaps) and the [Docker quick start](#-démarrage-rapide-docker)
+below for the exact error.
 
 ### 5. Ingest and query with the `dhd` CLI
 
@@ -120,6 +124,91 @@ uv run dhd query "SELECT * FROM sales"
 `dhd` reads `FLIGHT_SERVER_HOST` / `FLIGHT_SERVER_PORT` (default `localhost:8815`).
 If the server isn't running it fails with a clear message rather than hanging.
 `dhd branch …` is a placeholder until Nessie lands (ADR-0002 / Phase 3).
+
+> ⚠️ **Against a real (Dockerized) Flight server + MinIO, `dhd create-table` and
+> `dhd query` on the default `flight` engine currently segfault** — see
+> [Démarrage rapide (Docker)](#-démarrage-rapide-docker) below for the exact
+> reproduction and the working alternative (`--engine pyiceberg`).
+
+#### 🐳 Démarrage rapide (Docker)
+
+Verified end to end on 2026-11-08, Docker Desktop 29.6.2 / Compose v5.3.1, against
+a cold image cache:
+
+```bash
+cp .devcontainer/.env.example .env   # or: make env — then edit MINIO_ROOT_PASSWORD etc.
+docker compose up --build -d
+docker compose ps                    # minio, xorq-service, flight-server, xorq-admin -> healthy; trino crash-loops, see below
+```
+
+With the stack up, the full CLI round trip against the real containers
+(`localhost:8815` Flight server, `localhost:9000` MinIO S3):
+
+```bash
+uv run dhd list-tables                                    # OK
+uv run dhd insert sales data/sales_new.csv --mode append  # OK (table already existed from a prior run here)
+uv run dhd create-table sales data/sales.csv              # Segmentation fault (exit 139)
+uv run dhd query "SELECT * FROM sales"                    # Segmentation fault (exit 139), 100% reproducible
+```
+
+This is the **same bug class** previously documented for xorq 0.2.4
+(cloudpickling an ibis `Schema` in a Flight action response) — but it still
+reproduces on xorq 0.4.11 against a real Dockerized Flight server + real MinIO,
+even though the fix had been verified under a local `moto` S3 mock in a
+previous pass (see the correction below). Any action that round-trips a
+table's `Schema` (`create-table`'s confirmation step, `query`) crashes the
+`dhd` client process outright (`Windows fatal exception: access violation` /
+SIGSEGV); `list-tables` and `insert` do not and work fine.
+
+**The working path against Docker today is `--engine pyiceberg`**, verified
+for the full round trip:
+
+```bash
+ICEBERG_WAREHOUSE=s3://duckhouse-warehouse/ S3_ENDPOINT=http://localhost:9000 \
+AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin123 \
+  uv run dhd --engine pyiceberg create-table sales data/sales.csv   # OK
+  uv run dhd --engine pyiceberg insert sales data/sales_new.csv --mode append  # OK
+  uv run dhd --engine pyiceberg query "SELECT * FROM sales"         # OK
+  uv run dhd --engine pyiceberg list-tables                         # OK
+```
+
+**`trino` does not start.** It crash-loops (`restart: unless-stopped` keeps
+retrying every ~15-20s): Trino 483 rejects the catalog config in
+`config/trino/etc/catalog/iceberg.properties` with **41 configuration
+errors** — `iceberg.catalog.type=hadoop` isn't a valid `CatalogType` anymore,
+every `hive.s3.*` / `fs.s3a.*` property is unused on this version, and several
+`iceberg.*` keys were renamed (e.g. `iceberg.target-file-size-bytes` →
+`iceberg.target-max-file-size`). Exact first lines of the error:
+
+```
+io.airlift.bootstrap.ApplicationConfigurationException: Configuration errors:
+1) Error: Invalid value 'hadoop' for type CatalogType (property 'iceberg.catalog.type') ...
+2) Error: Defunct property 'iceberg.extended-statistics.enabled' (class [class IcebergConfig]) cannot be configured.
+...
+41 errors
+```
+
+Rewriting this file for Trino 483 would still not make it useful today: Trino
+and the Flight server's `pyiceberg` catalog don't share a catalog (that's
+[ADR-0002](docs/adr/0002-iceberg-catalog-nessie.md)'s Nessie work, not done
+yet), so fixing the properties alone wouldn't let Trino see tables `dhd`
+writes. Left as-is for this pass — see [Known gaps](#-known-gaps).
+
+Also found and fixed while verifying this: `flight-server` originally
+crash-looped too (`psycopg` has no system `libpq` in the slim runtime image —
+switched to `psycopg[binary]`), and `xorq-admin` reported permanently
+"unhealthy" despite serving traffic (its healthcheck hit `localhost`, which
+resolves to `::1` first, and nginx only listens on IPv4 — pointed it at
+`127.0.0.1`). Both are fixed in this repo's Dockerfiles already.
+
+**Correction to the previous pass's segfault write-up:** the "Verified round
+trip without Docker" section below claims the xorq 0.2.4 → 0.4.11 upgrade
+fixed the historical segfault, verified against a local `moto` S3 mock. That
+verification was real, but incomplete — it does **not** reproduce the actual
+failure condition. Against a real Dockerized Flight server + real MinIO, the
+segfault is still 100% reproducible on xorq 0.4.11, as shown above. Treat the
+`moto`-based claim below as disproven for the Docker/real-S3 case; `--engine
+pyiceberg` is the only verified-working path against Docker today.
 
 #### Verified round trip without Docker
 
@@ -152,9 +241,14 @@ this environment; see step 4 above for what is and isn't expected to work
 there.
 
 The same round trip was also re-run with an `s3://` warehouse against a local
-`moto` S3 mock (`uv run moto_server`, same separate-process setup) — this is
-the specific condition the old `dhd query` segfault (xorq 0.2.4) was reported
-under; it no longer reproduces on xorq 0.4.11.
+`moto` S3 mock (`uv run moto_server`, same separate-process setup), and did
+**not** reproduce the historical segfault there. **This turned out to be an
+incomplete test, not a fix:** against a real Dockerized Flight server + real
+MinIO (verified 2026-11-08, see
+[Démarrage rapide (Docker)](#-démarrage-rapide-docker)), the same segfault is
+100% reproducible on xorq 0.4.11. Whatever `moto` mocks differs from real S3
+in a way that avoids the crash; don't trust the `moto` result as evidence the
+bug is fixed.
 
 #### Engines: `--engine flight` (default) vs `--engine pyiceberg`
 
@@ -267,18 +361,25 @@ uv run python scripts/delete_tenant.py --id tenant_acme
 
 ## 📈 BI Interface with Trino
 
-**Not functional yet.** `trino` currently fails to start (config in
-`config/trino/etc/` predates Trino 483's config format), and even once it starts,
-it has no catalog shared with the Iceberg tables `dhd`/`HybridBackend` write —
-that needs [ADR-0002](docs/adr/0002-iceberg-catalog-nessie.md) (Nessie). Treat
-`docker-compose.yml`'s `trino` service and `scripts/query_trino.py` /
-`scripts/setup_iceberg_tables.py` as scaffolding for that future work, not a
-working path today.
+**Not functional yet.** `trino` currently fails to start — config in
+`config/trino/etc/` predates Trino 483's config format (41 rejected
+configuration properties; exact error in
+[Démarrage rapide (Docker)](#-démarrage-rapide-docker)) — and even once it
+starts, it has no catalog shared with the Iceberg tables `dhd`/`HybridBackend`
+write — that needs [ADR-0002](docs/adr/0002-iceberg-catalog-nessie.md)
+(Nessie). Treat `docker-compose.yml`'s `trino` service and
+`scripts/query_trino.py` / `scripts/setup_iceberg_tables.py` as scaffolding
+for that future work, not a working path today.
 
 ## ⚠️ Known gaps
 
-- **Trino doesn't start**, and has no catalog shared with the rest of the stack
-  even when it does — see the BI section above.
+- **Trino doesn't start** (41 rejected config properties on Trino 483), and
+  has no catalog shared with the rest of the stack even when it does — see
+  the BI section above and [Démarrage rapide (Docker)](#-démarrage-rapide-docker).
+- **`dhd create-table` / `dhd query` segfault against a real Dockerized Flight
+  server + real MinIO**, on xorq 0.4.11, 100% reproducible — see
+  [Démarrage rapide (Docker)](#-démarrage-rapide-docker). Use `--engine
+  pyiceberg` instead; it's the only verified-working path against Docker.
 - `config/trino/etc/catalog/iceberg.properties` hardcodes MinIO credentials —
   see the warning in step 3 above.
 
