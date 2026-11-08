@@ -87,6 +87,10 @@ tests/data/Chinook_Sqlite.sqlite
 .dlt/
 ingestion/dlt/_pipeline_data/
 scripts/_bench_work/
+# Vague 1b: incremental-cursor state (connectors/_state.py) and the files
+# connector's HTTP download cache -- both ephemeral, per-machine.
+ingestion/dlt/_state/
+ingestion/dlt/_cache/
 
 # fix/segfault-diagnosis: raw bytes dumped by scripts/repro_segfault.py
 scripts/schema_bytes.pkl

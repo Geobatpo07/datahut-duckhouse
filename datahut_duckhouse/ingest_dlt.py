@@ -38,17 +38,10 @@ def _load_pipeline():
     return pipeline
 
 
-def run_ingest_dlt(source_name: str) -> dict[str, tuple[str, int]]:
-    """Extract ``source_name`` ('all' for every source) and load it into
-    Iceberg via the pyiceberg engine.
-
-    Returns ``{table_name: (verb, row_count)}`` where ``verb`` is "created"
-    (table did not exist yet) or "overwritten" (it did).
-    """
-    pipeline = _load_pipeline()
-    from datahut_duckhouse.ingest import IngestUnavailableError
-    from datahut_duckhouse.ingest import connect as ingest_connect
-
+def _resolve_sources(pipeline, source_name: str):
+    """Shared by :func:`run_ingest_dlt` and :func:`plan_ingest_dlt`: parse
+    ``sources.yml`` and narrow it to ``source_name`` ('all' for every
+    source)."""
     try:
         sources = pipeline.load_sources()
     except pipeline.SourcesConfigError as exc:
@@ -60,6 +53,28 @@ def run_ingest_dlt(source_name: str) -> dict[str, tuple[str, int]]:
             raise IngestDltError(
                 f"No source named '{source_name}' in ingestion/dlt/sources.yml."
             )
+    return sources
+
+
+def plan_ingest_dlt(source_name: str) -> list:
+    """Validate ``sources.yml`` and resolve ``source_name`` without extracting,
+    connecting to Iceberg, or writing anything -- the ``--dry-run`` path."""
+    pipeline = _load_pipeline()
+    return _resolve_sources(pipeline, source_name)
+
+
+def run_ingest_dlt(source_name: str) -> dict[str, tuple[str, int]]:
+    """Extract ``source_name`` ('all' for every source) and load it into
+    Iceberg via the pyiceberg engine.
+
+    Returns ``{table_name: (verb, row_count)}`` where ``verb`` is "created"
+    (table did not exist yet) or "overwritten" (it did).
+    """
+    pipeline = _load_pipeline()
+    from datahut_duckhouse.ingest import IngestUnavailableError
+    from datahut_duckhouse.ingest import connect as ingest_connect
+
+    sources = _resolve_sources(pipeline, source_name)
 
     try:
         backend = ingest_connect()

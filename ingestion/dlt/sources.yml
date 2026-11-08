@@ -1,49 +1,184 @@
-# Multi-engine ingestion sources for the Chinook benchmark (Vague 1).
+# Source registry v2 (Vague 1b, task 1). Schema enforced by
+# ingestion/dlt/registry.py's pydantic model -- validate this file with
+# `dhd sources validate`, list it with `dhd sources list`.
 #
-# One entry = one source database. `ingestion/dlt/pipeline.py` reads this
-# file and extracts each source with dlt's `sql_database` source, writing
-# every table prefixed with the source's own `name` (e.g. source `pg_chinook`
-# + table `album` -> `pg_chinook_album`), so all sources can land in the same
-# DataHut namespace without colliding.
+# Common fields (every source):
+#   name             - prefix used for every table/resource from this source
+#   family           - sql | files | rest (dispatches to connectors/<family>.py)
+#   connector        - which connector within the family (informative + used
+#                       by `scripts/new_source.py`'s templates)
+#   secret_ref       - NAME of an environment variable holding the connection
+#                       string/secret (never the value itself) -- null if the
+#                       source needs none (local files, no-key REST APIs)
+#   schedule         - cron expression, informative only for now (nothing
+#                       reads it yet -- a future scheduler would)
+#   resources        - tables (sql) / resource names (rest) / [] = "every
+#                       table in the schema" (sql only; files/rest need an
+#                       explicit list, files defaults to [name] if omitted)
+#   incremental      - {column, type} cursor for pulling only new/changed
+#                       rows (connectors/sql.py); omit for a full pull every run
+#   write_disposition - append | merge | replace (merge needs primary_key)
+#   primary_key      - required if write_disposition is merge
+#   schema_contract  - evolve | freeze | discard_value (dlt's own semantics,
+#                       applied per source -- see docs/INGESTION.md)
+#   target_prefix    - overrides `name` as the table prefix, if set
+#   instance         - reserved for the later "50 instances" phase; unused,
+#                       no instance-aware logic exists yet
+#   network          - true if this source hits a real external network
+#                       service -- its connector test is marked `network`
+#                       and excluded by default (task 4)
 #
-# Fields:
-#   name           - prefix used for every table from this source
-#   dialect        - sqlite | postgresql | mysql | sqlserver
-#   connection_env - name of the environment variable holding the connection
-#                    URL (never the URL itself -- see .devcontainer/.env.example)
-#   schema         - optional; defaults below are the schema each engine's
-#                    Chinook load script actually uses
-#   tables         - explicit list, or [] for "every table in the schema"
+# Family-specific fields:
+#   sql:   dialect (sqlite|postgresql|mysql|sqlserver), schema (namespace)
+#   files: path (local file), format (csv|json|parquet), http_url (optional:
+#          download to a local cache file before reading `format`)
+#   rest:  base_url, rest_options (free-form: headers/params/paginator,
+#          passed straight through to dlt's rest_api_source per resource)
 #
-# Add a fourth source by adding one entry here -- the pipeline and
-# `dhd ingest-dlt` need no code change (success criterion, Vague 1 step 1).
+# Adding a source needs no code change in pipeline.py/connectors/ -- add one
+# entry here (success criterion carried over from Vague 1 step 1, now
+# covering all three families). `scripts/new_source.py <family> <name>`
+# generates the skeleton entry + a test stub.
 
 sources:
+  # -- sql: Chinook, one dialect each (Vague 1) ---------------------------
   - name: sqlite_chinook
+    family: sql
+    connector: sql_database
+    secret_ref: CHINOOK_SQLITE_URL
+    schedule: null
+    resources: []
+    write_disposition: replace
+    schema_contract: evolve
     dialect: sqlite
-    connection_env: CHINOOK_SQLITE_URL
     schema: null
-    tables: []
 
   - name: pg_chinook
+    family: sql
+    connector: sql_database
+    secret_ref: CHINOOK_POSTGRES_URL
+    schedule: null
+    resources: []
+    write_disposition: replace
+    schema_contract: evolve
     dialect: postgresql
-    connection_env: CHINOOK_POSTGRES_URL
     schema: public
-    tables: []
 
   - name: mysql_chinook
+    family: sql
+    connector: sql_database
+    secret_ref: CHINOOK_MYSQL_URL
+    schedule: null
+    resources: []
+    write_disposition: replace
+    schema_contract: evolve
     dialect: mysql
-    connection_env: CHINOOK_MYSQL_URL
     schema: Chinook
-    tables: []
 
-  # Optional, matches the `mssql` compose profile -- not run or verified in
-  # this pass (see tests/docker/chinook/README.md). Left in sources.yml as
-  # the worked example of "a fourth source is one entry"; `dhd ingest-dlt
-  # --source mssql_chinook` will fail with a clear connection error until the
-  # mssql profile is actually brought up.
+  # Scaffolded, not run/verified -- see tests/docker/chinook/README.md.
   - name: mssql_chinook
+    family: sql
+    connector: sql_database
+    secret_ref: CHINOOK_MSSQL_URL
+    schedule: null
+    resources: []
+    write_disposition: replace
+    schema_contract: evolve
     dialect: sqlserver
-    connection_env: CHINOOK_MSSQL_URL
     schema: dbo
-    tables: []
+
+  # Incremental + merge demonstration (task 5, experiment 1) against the
+  # *same* Postgres Chinook container as pg_chinook above, one table only.
+  # Needs a column the stock Chinook schema doesn't have:
+  #   ALTER TABLE customer ADD COLUMN updated_at timestamptz DEFAULT now();
+  # run once against chinook-postgres (docker-compose.test.yml) -- see
+  # docs/DLT_EVAL.md. Not part of the regular sql_chinook/pg_chinook flow on
+  # purpose, so this experiment's schema change never touches the other
+  # pg_chinook-based tests.
+  - name: pg_chinook_customers_incremental
+    family: sql
+    connector: sql_database
+    secret_ref: CHINOOK_POSTGRES_URL
+    schedule: null
+    resources: [customer]
+    incremental:
+      column: updated_at
+      type: timestamp
+    write_disposition: merge
+    primary_key: [customer_id]
+    schema_contract: evolve
+    dialect: postgresql
+    schema: public
+
+  # -- files: local CSV/JSON (task 2) -------------------------------------
+  # Pre-existing fixture (21369 rows, disease/symptom dataset) -- already in
+  # the repo from before this registry existed.
+  - name: disease_symptoms_csv
+    family: files
+    connector: local_file
+    secret_ref: null
+    schedule: null
+    resources: [disease_symptoms]
+    write_disposition: replace
+    schema_contract: evolve
+    path: ingestion/data/data.csv
+    format: csv
+
+  # Synthetic fixture committed at tests/data/sample_products.json (task 2) --
+  # generated once by scripts/new_source.py's `files` template, not fetched
+  # live, so this source and its test stay deterministic.
+  - name: sample_products_json
+    family: files
+    connector: local_file
+    secret_ref: null
+    schedule: null
+    resources: [products]
+    write_disposition: replace
+    schema_contract: evolve
+    path: tests/data/sample_products.json
+    format: json
+
+  # -- rest: 2 public, key-free APIs (task 2) ------------------------------
+  # jsonplaceholder: a fake REST API built for exactly this purpose (testing
+  # and prototyping clients) -- stable schema, no auth, no rate limiting,
+  # single-page responses. Chosen because it needs zero connector-side
+  # pagination/auth logic, a useful "simplest possible REST source" case.
+  - name: jsonplaceholder
+    family: rest
+    connector: rest_api
+    secret_ref: null
+    schedule: null
+    resources: [users, posts]
+    write_disposition: replace
+    schema_contract: evolve
+    base_url: https://jsonplaceholder.typicode.com/
+    network: true
+
+  # Open Brewery DB: a real public API (not a mock), no key, but paginated --
+  # chosen to exercise the connector's pagination path (dlt's PageNumberPaginator,
+  # declared in rest_options below) for real, not just the single-page case
+  # above. Capped at 5 pages (~250 rows) so a routine run stays bounded
+  # instead of pulling its entire multi-thousand-row dataset every time.
+  # Needs a non-default User-Agent -- the API returns 403 without one.
+  - name: open_brewery_db
+    family: rest
+    connector: rest_api
+    secret_ref: null
+    schedule: null
+    resources: [breweries]
+    write_disposition: replace
+    schema_contract: evolve
+    base_url: https://api.openbrewerydb.org/v1/
+    network: true
+    rest_options:
+      headers:
+        User-Agent: "datahut-duckhouse/0.1 (+https://github.com/Geobatpo07/datahut-duckhouse)"
+      params:
+        per_page: 50
+      paginator:
+        type: page_number
+        page_param: page
+        base_page: 1
+        total_path: null
+        stop_after_empty_page: true
+        maximum_page: 5

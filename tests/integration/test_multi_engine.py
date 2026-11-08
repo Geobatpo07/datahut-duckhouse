@@ -61,16 +61,16 @@ _COLUMNS = {
 
 
 def _reflected_table_names(source) -> tuple[str, ...]:
-    if source.tables:
-        return source.tables
+    if source.resources:
+        return tuple(source.resources)
     engine = sa.create_engine(source.connection_url)
     inspector = sa.inspect(engine)
-    return tuple(inspector.get_table_names(schema=source.schema))
+    return tuple(inspector.get_table_names(schema=source.schema_name))
 
 
 def _qualified(source, table_name: str) -> str:
-    if source.dialect == "postgresql" and source.schema:
-        return f"{source.schema}.{table_name}"
+    if source.dialect == "postgresql" and source.schema_name:
+        return f"{source.schema_name}.{table_name}"
     return table_name
 
 
@@ -141,12 +141,14 @@ class TestSalesByCountryConsistentAcrossSources:
             cols = _COLUMNS[source_name]
             work_dir = tmp_path / source_name
             written = pipeline.extract_source(
-                pipeline.Source(
+                pipeline.SourceConfig(
                     name=source.name,
+                    family="sql",
+                    connector="sql_database",
+                    secret_ref=source.secret_ref,
                     dialect=source.dialect,
-                    connection_env=source.connection_env,
-                    schema=source.schema,
-                    tables=(cols["customer_table"], cols["invoice_table"]),
+                    schema=source.schema_name,
+                    resources=[cols["customer_table"], cols["invoice_table"]],
                 ),
                 work_dir=work_dir,
             )

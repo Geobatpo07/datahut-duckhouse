@@ -1,0 +1,1602 @@
+[
+  {
+    "product_id": 1,
+    "name": "Product 0001",
+    "category": "garden",
+    "price": 57.43,
+    "in_stock": true,
+    "created_at": "2026-02-02T00:00:00Z"
+  },
+  {
+    "product_id": 2,
+    "name": "Product 0002",
+    "category": "kitchen",
+    "price": 113.15,
+    "in_stock": true,
+    "created_at": "2026-03-03T00:00:00Z"
+  },
+  {
+    "product_id": 3,
+    "name": "Product 0003",
+    "category": "garden",
+    "price": 370.84,
+    "in_stock": true,
+    "created_at": "2026-04-04T00:00:00Z"
+  },
+  {
+    "product_id": 4,
+    "name": "Product 0004",
+    "category": "sports",
+    "price": 212.11,
+    "in_stock": false,
+    "created_at": "2026-05-05T00:00:00Z"
+  },
+  {
+    "product_id": 5,
+    "name": "Product 0005",
+    "category": "kitchen",
+    "price": 117.86,
+    "in_stock": true,
+    "created_at": "2026-06-06T00:00:00Z"
+  },
+  {
+    "product_id": 6,
+    "name": "Product 0006",
+    "category": "sports",
+    "price": 101.01,
+    "in_stock": true,
+    "created_at": "2026-07-07T00:00:00Z"
+  },
+  {
+    "product_id": 7,
+    "name": "Product 0007",
+    "category": "sports",
+    "price": 210.91,
+    "in_stock": true,
+    "created_at": "2026-08-08T00:00:00Z"
+  },
+  {
+    "product_id": 8,
+    "name": "Product 0008",
+    "category": "books",
+    "price": 405.09,
+    "in_stock": false,
+    "created_at": "2026-09-09T00:00:00Z"
+  },
+  {
+    "product_id": 9,
+    "name": "Product 0009",
+    "category": "kitchen",
+    "price": 349.66,
+    "in_stock": true,
+    "created_at": "2026-10-10T00:00:00Z"
+  },
+  {
+    "product_id": 10,
+    "name": "Product 0010",
+    "category": "kitchen",
+    "price": 109.22,
+    "in_stock": true,
+    "created_at": "2026-11-11T00:00:00Z"
+  },
+  {
+    "product_id": 11,
+    "name": "Product 0011",
+    "category": "electronics",
+    "price": 48.18,
+    "in_stock": false,
+    "created_at": "2026-12-12T00:00:00Z"
+  },
+  {
+    "product_id": 12,
+    "name": "Product 0012",
+    "category": "books",
+    "price": 302.65,
+    "in_stock": true,
+    "created_at": "2026-01-13T00:00:00Z"
+  },
+  {
+    "product_id": 13,
+    "name": "Product 0013",
+    "category": "garden",
+    "price": 230.78,
+    "in_stock": false,
+    "created_at": "2026-02-14T00:00:00Z"
+  },
+  {
+    "product_id": 14,
+    "name": "Product 0014",
+    "category": "toys",
+    "price": 41.23,
+    "in_stock": true,
+    "created_at": "2026-03-15T00:00:00Z"
+  },
+  {
+    "product_id": 15,
+    "name": "Product 0015",
+    "category": "garden",
+    "price": 310.01,
+    "in_stock": true,
+    "created_at": "2026-04-16T00:00:00Z"
+  },
+  {
+    "product_id": 16,
+    "name": "Product 0016",
+    "category": "sports",
+    "price": 97.75,
+    "in_stock": false,
+    "created_at": "2026-05-17T00:00:00Z"
+  },
+  {
+    "product_id": 17,
+    "name": "Product 0017",
+    "category": "garden",
+    "price": 115.48,
+    "in_stock": true,
+    "created_at": "2026-06-18T00:00:00Z"
+  },
+  {
+    "product_id": 18,
+    "name": "Product 0018",
+    "category": "electronics",
+    "price": 427.94,
+    "in_stock": true,
+    "created_at": "2026-07-19T00:00:00Z"
+  },
+  {
+    "product_id": 19,
+    "name": "Product 0019",
+    "category": "toys",
+    "price": 140.42,
+    "in_stock": true,
+    "created_at": "2026-08-20T00:00:00Z"
+  },
+  {
+    "product_id": 20,
+    "name": "Product 0020",
+    "category": "books",
+    "price": 82.99,
+    "in_stock": true,
+    "created_at": "2026-09-21T00:00:00Z"
+  },
+  {
+    "product_id": 21,
+    "name": "Product 0021",
+    "category": "garden",
+    "price": 134.94,
+    "in_stock": true,
+    "created_at": "2026-10-22T00:00:00Z"
+  },
+  {
+    "product_id": 22,
+    "name": "Product 0022",
+    "category": "garden",
+    "price": 37.55,
+    "in_stock": true,
+    "created_at": "2026-11-23T00:00:00Z"
+  },
+  {
+    "product_id": 23,
+    "name": "Product 0023",
+    "category": "sports",
+    "price": 365.1,
+    "in_stock": true,
+    "created_at": "2026-12-24T00:00:00Z"
+  },
+  {
+    "product_id": 24,
+    "name": "Product 0024",
+    "category": "toys",
+    "price": 136.42,
+    "in_stock": true,
+    "created_at": "2026-01-25T00:00:00Z"
+  },
+  {
+    "product_id": 25,
+    "name": "Product 0025",
+    "category": "garden",
+    "price": 279.35,
+    "in_stock": true,
+    "created_at": "2026-02-26T00:00:00Z"
+  },
+  {
+    "product_id": 26,
+    "name": "Product 0026",
+    "category": "electronics",
+    "price": 116.06,
+    "in_stock": false,
+    "created_at": "2026-03-27T00:00:00Z"
+  },
+  {
+    "product_id": 27,
+    "name": "Product 0027",
+    "category": "books",
+    "price": 201.77,
+    "in_stock": false,
+    "created_at": "2026-04-01T00:00:00Z"
+  },
+  {
+    "product_id": 28,
+    "name": "Product 0028",
+    "category": "sports",
+    "price": 438.42,
+    "in_stock": true,
+    "created_at": "2026-05-02T00:00:00Z"
+  },
+  {
+    "product_id": 29,
+    "name": "Product 0029",
+    "category": "garden",
+    "price": 250.61,
+    "in_stock": true,
+    "created_at": "2026-06-03T00:00:00Z"
+  },
+  {
+    "product_id": 30,
+    "name": "Product 0030",
+    "category": "garden",
+    "price": 230.5,
+    "in_stock": true,
+    "created_at": "2026-07-04T00:00:00Z"
+  },
+  {
+    "product_id": 31,
+    "name": "Product 0031",
+    "category": "kitchen",
+    "price": 372.99,
+    "in_stock": true,
+    "created_at": "2026-08-05T00:00:00Z"
+  },
+  {
+    "product_id": 32,
+    "name": "Product 0032",
+    "category": "garden",
+    "price": 293.11,
+    "in_stock": true,
+    "created_at": "2026-09-06T00:00:00Z"
+  },
+  {
+    "product_id": 33,
+    "name": "Product 0033",
+    "category": "toys",
+    "price": 182.26,
+    "in_stock": true,
+    "created_at": "2026-10-07T00:00:00Z"
+  },
+  {
+    "product_id": 34,
+    "name": "Product 0034",
+    "category": "kitchen",
+    "price": 255.73,
+    "in_stock": false,
+    "created_at": "2026-11-08T00:00:00Z"
+  },
+  {
+    "product_id": 35,
+    "name": "Product 0035",
+    "category": "electronics",
+    "price": 430.82,
+    "in_stock": true,
+    "created_at": "2026-12-09T00:00:00Z"
+  },
+  {
+    "product_id": 36,
+    "name": "Product 0036",
+    "category": "kitchen",
+    "price": 396.45,
+    "in_stock": true,
+    "created_at": "2026-01-10T00:00:00Z"
+  },
+  {
+    "product_id": 37,
+    "name": "Product 0037",
+    "category": "electronics",
+    "price": 193.6,
+    "in_stock": true,
+    "created_at": "2026-02-11T00:00:00Z"
+  },
+  {
+    "product_id": 38,
+    "name": "Product 0038",
+    "category": "toys",
+    "price": 265.49,
+    "in_stock": true,
+    "created_at": "2026-03-12T00:00:00Z"
+  },
+  {
+    "product_id": 39,
+    "name": "Product 0039",
+    "category": "electronics",
+    "price": 340.77,
+    "in_stock": false,
+    "created_at": "2026-04-13T00:00:00Z"
+  },
+  {
+    "product_id": 40,
+    "name": "Product 0040",
+    "category": "sports",
+    "price": 375.93,
+    "in_stock": true,
+    "created_at": "2026-05-14T00:00:00Z"
+  },
+  {
+    "product_id": 41,
+    "name": "Product 0041",
+    "category": "books",
+    "price": 57.54,
+    "in_stock": true,
+    "created_at": "2026-06-15T00:00:00Z"
+  },
+  {
+    "product_id": 42,
+    "name": "Product 0042",
+    "category": "toys",
+    "price": 3.61,
+    "in_stock": true,
+    "created_at": "2026-07-16T00:00:00Z"
+  },
+  {
+    "product_id": 43,
+    "name": "Product 0043",
+    "category": "garden",
+    "price": 133.16,
+    "in_stock": true,
+    "created_at": "2026-08-17T00:00:00Z"
+  },
+  {
+    "product_id": 44,
+    "name": "Product 0044",
+    "category": "kitchen",
+    "price": 254.82,
+    "in_stock": false,
+    "created_at": "2026-09-18T00:00:00Z"
+  },
+  {
+    "product_id": 45,
+    "name": "Product 0045",
+    "category": "garden",
+    "price": 150.62,
+    "in_stock": true,
+    "created_at": "2026-10-19T00:00:00Z"
+  },
+  {
+    "product_id": 46,
+    "name": "Product 0046",
+    "category": "sports",
+    "price": 101.05,
+    "in_stock": true,
+    "created_at": "2026-11-20T00:00:00Z"
+  },
+  {
+    "product_id": 47,
+    "name": "Product 0047",
+    "category": "kitchen",
+    "price": 270.6,
+    "in_stock": true,
+    "created_at": "2026-12-21T00:00:00Z"
+  },
+  {
+    "product_id": 48,
+    "name": "Product 0048",
+    "category": "sports",
+    "price": 459.4,
+    "in_stock": true,
+    "created_at": "2026-01-22T00:00:00Z"
+  },
+  {
+    "product_id": 49,
+    "name": "Product 0049",
+    "category": "toys",
+    "price": 11.69,
+    "in_stock": true,
+    "created_at": "2026-02-23T00:00:00Z"
+  },
+  {
+    "product_id": 50,
+    "name": "Product 0050",
+    "category": "books",
+    "price": 121.24,
+    "in_stock": true,
+    "created_at": "2026-03-24T00:00:00Z"
+  },
+  {
+    "product_id": 51,
+    "name": "Product 0051",
+    "category": "sports",
+    "price": 473.57,
+    "in_stock": false,
+    "created_at": "2026-04-25T00:00:00Z"
+  },
+  {
+    "product_id": 52,
+    "name": "Product 0052",
+    "category": "toys",
+    "price": 408.37,
+    "in_stock": true,
+    "created_at": "2026-05-26T00:00:00Z"
+  },
+  {
+    "product_id": 53,
+    "name": "Product 0053",
+    "category": "sports",
+    "price": 383.38,
+    "in_stock": false,
+    "created_at": "2026-06-27T00:00:00Z"
+  },
+  {
+    "product_id": 54,
+    "name": "Product 0054",
+    "category": "toys",
+    "price": 473.52,
+    "in_stock": true,
+    "created_at": "2026-07-01T00:00:00Z"
+  },
+  {
+    "product_id": 55,
+    "name": "Product 0055",
+    "category": "sports",
+    "price": 436.46,
+    "in_stock": true,
+    "created_at": "2026-08-02T00:00:00Z"
+  },
+  {
+    "product_id": 56,
+    "name": "Product 0056",
+    "category": "kitchen",
+    "price": 464.59,
+    "in_stock": true,
+    "created_at": "2026-09-03T00:00:00Z"
+  },
+  {
+    "product_id": 57,
+    "name": "Product 0057",
+    "category": "garden",
+    "price": 102.16,
+    "in_stock": true,
+    "created_at": "2026-10-04T00:00:00Z"
+  },
+  {
+    "product_id": 58,
+    "name": "Product 0058",
+    "category": "garden",
+    "price": 325.63,
+    "in_stock": true,
+    "created_at": "2026-11-05T00:00:00Z"
+  },
+  {
+    "product_id": 59,
+    "name": "Product 0059",
+    "category": "sports",
+    "price": 226.83,
+    "in_stock": true,
+    "created_at": "2026-12-06T00:00:00Z"
+  },
+  {
+    "product_id": 60,
+    "name": "Product 0060",
+    "category": "electronics",
+    "price": 170.36,
+    "in_stock": true,
+    "created_at": "2026-01-07T00:00:00Z"
+  },
+  {
+    "product_id": 61,
+    "name": "Product 0061",
+    "category": "kitchen",
+    "price": 295.03,
+    "in_stock": false,
+    "created_at": "2026-02-08T00:00:00Z"
+  },
+  {
+    "product_id": 62,
+    "name": "Product 0062",
+    "category": "garden",
+    "price": 316.28,
+    "in_stock": true,
+    "created_at": "2026-03-09T00:00:00Z"
+  },
+  {
+    "product_id": 63,
+    "name": "Product 0063",
+    "category": "electronics",
+    "price": 430.09,
+    "in_stock": false,
+    "created_at": "2026-04-10T00:00:00Z"
+  },
+  {
+    "product_id": 64,
+    "name": "Product 0064",
+    "category": "kitchen",
+    "price": 140.67,
+    "in_stock": true,
+    "created_at": "2026-05-11T00:00:00Z"
+  },
+  {
+    "product_id": 65,
+    "name": "Product 0065",
+    "category": "sports",
+    "price": 67.88,
+    "in_stock": true,
+    "created_at": "2026-06-12T00:00:00Z"
+  },
+  {
+    "product_id": 66,
+    "name": "Product 0066",
+    "category": "sports",
+    "price": 288.94,
+    "in_stock": true,
+    "created_at": "2026-07-13T00:00:00Z"
+  },
+  {
+    "product_id": 67,
+    "name": "Product 0067",
+    "category": "toys",
+    "price": 404.12,
+    "in_stock": true,
+    "created_at": "2026-08-14T00:00:00Z"
+  },
+  {
+    "product_id": 68,
+    "name": "Product 0068",
+    "category": "electronics",
+    "price": 330.16,
+    "in_stock": true,
+    "created_at": "2026-09-15T00:00:00Z"
+  },
+  {
+    "product_id": 69,
+    "name": "Product 0069",
+    "category": "toys",
+    "price": 234.57,
+    "in_stock": true,
+    "created_at": "2026-10-16T00:00:00Z"
+  },
+  {
+    "product_id": 70,
+    "name": "Product 0070",
+    "category": "garden",
+    "price": 327.41,
+    "in_stock": true,
+    "created_at": "2026-11-17T00:00:00Z"
+  },
+  {
+    "product_id": 71,
+    "name": "Product 0071",
+    "category": "electronics",
+    "price": 202.5,
+    "in_stock": true,
+    "created_at": "2026-12-18T00:00:00Z"
+  },
+  {
+    "product_id": 72,
+    "name": "Product 0072",
+    "category": "electronics",
+    "price": 125.82,
+    "in_stock": true,
+    "created_at": "2026-01-19T00:00:00Z"
+  },
+  {
+    "product_id": 73,
+    "name": "Product 0073",
+    "category": "toys",
+    "price": 71.8,
+    "in_stock": true,
+    "created_at": "2026-02-20T00:00:00Z"
+  },
+  {
+    "product_id": 74,
+    "name": "Product 0074",
+    "category": "toys",
+    "price": 126.39,
+    "in_stock": true,
+    "created_at": "2026-03-21T00:00:00Z"
+  },
+  {
+    "product_id": 75,
+    "name": "Product 0075",
+    "category": "toys",
+    "price": 404.39,
+    "in_stock": true,
+    "created_at": "2026-04-22T00:00:00Z"
+  },
+  {
+    "product_id": 76,
+    "name": "Product 0076",
+    "category": "electronics",
+    "price": 27.18,
+    "in_stock": true,
+    "created_at": "2026-05-23T00:00:00Z"
+  },
+  {
+    "product_id": 77,
+    "name": "Product 0077",
+    "category": "electronics",
+    "price": 484.55,
+    "in_stock": true,
+    "created_at": "2026-06-24T00:00:00Z"
+  },
+  {
+    "product_id": 78,
+    "name": "Product 0078",
+    "category": "kitchen",
+    "price": 84.81,
+    "in_stock": true,
+    "created_at": "2026-07-25T00:00:00Z"
+  },
+  {
+    "product_id": 79,
+    "name": "Product 0079",
+    "category": "kitchen",
+    "price": 432.59,
+    "in_stock": true,
+    "created_at": "2026-08-26T00:00:00Z"
+  },
+  {
+    "product_id": 80,
+    "name": "Product 0080",
+    "category": "kitchen",
+    "price": 190.72,
+    "in_stock": true,
+    "created_at": "2026-09-27T00:00:00Z"
+  },
+  {
+    "product_id": 81,
+    "name": "Product 0081",
+    "category": "books",
+    "price": 463.4,
+    "in_stock": true,
+    "created_at": "2026-10-01T00:00:00Z"
+  },
+  {
+    "product_id": 82,
+    "name": "Product 0082",
+    "category": "books",
+    "price": 212.65,
+    "in_stock": true,
+    "created_at": "2026-11-02T00:00:00Z"
+  },
+  {
+    "product_id": 83,
+    "name": "Product 0083",
+    "category": "sports",
+    "price": 331.6,
+    "in_stock": true,
+    "created_at": "2026-12-03T00:00:00Z"
+  },
+  {
+    "product_id": 84,
+    "name": "Product 0084",
+    "category": "kitchen",
+    "price": 149.75,
+    "in_stock": true,
+    "created_at": "2026-01-04T00:00:00Z"
+  },
+  {
+    "product_id": 85,
+    "name": "Product 0085",
+    "category": "sports",
+    "price": 368.39,
+    "in_stock": false,
+    "created_at": "2026-02-05T00:00:00Z"
+  },
+  {
+    "product_id": 86,
+    "name": "Product 0086",
+    "category": "books",
+    "price": 30.46,
+    "in_stock": true,
+    "created_at": "2026-03-06T00:00:00Z"
+  },
+  {
+    "product_id": 87,
+    "name": "Product 0087",
+    "category": "sports",
+    "price": 459.84,
+    "in_stock": true,
+    "created_at": "2026-04-07T00:00:00Z"
+  },
+  {
+    "product_id": 88,
+    "name": "Product 0088",
+    "category": "electronics",
+    "price": 480.46,
+    "in_stock": false,
+    "created_at": "2026-05-08T00:00:00Z"
+  },
+  {
+    "product_id": 89,
+    "name": "Product 0089",
+    "category": "kitchen",
+    "price": 36.11,
+    "in_stock": false,
+    "created_at": "2026-06-09T00:00:00Z"
+  },
+  {
+    "product_id": 90,
+    "name": "Product 0090",
+    "category": "kitchen",
+    "price": 203.07,
+    "in_stock": true,
+    "created_at": "2026-07-10T00:00:00Z"
+  },
+  {
+    "product_id": 91,
+    "name": "Product 0091",
+    "category": "sports",
+    "price": 124.61,
+    "in_stock": true,
+    "created_at": "2026-08-11T00:00:00Z"
+  },
+  {
+    "product_id": 92,
+    "name": "Product 0092",
+    "category": "sports",
+    "price": 42.82,
+    "in_stock": true,
+    "created_at": "2026-09-12T00:00:00Z"
+  },
+  {
+    "product_id": 93,
+    "name": "Product 0093",
+    "category": "sports",
+    "price": 262.34,
+    "in_stock": true,
+    "created_at": "2026-10-13T00:00:00Z"
+  },
+  {
+    "product_id": 94,
+    "name": "Product 0094",
+    "category": "kitchen",
+    "price": 335.51,
+    "in_stock": true,
+    "created_at": "2026-11-14T00:00:00Z"
+  },
+  {
+    "product_id": 95,
+    "name": "Product 0095",
+    "category": "books",
+    "price": 199.09,
+    "in_stock": true,
+    "created_at": "2026-12-15T00:00:00Z"
+  },
+  {
+    "product_id": 96,
+    "name": "Product 0096",
+    "category": "books",
+    "price": 229.69,
+    "in_stock": true,
+    "created_at": "2026-01-16T00:00:00Z"
+  },
+  {
+    "product_id": 97,
+    "name": "Product 0097",
+    "category": "electronics",
+    "price": 6.63,
+    "in_stock": true,
+    "created_at": "2026-02-17T00:00:00Z"
+  },
+  {
+    "product_id": 98,
+    "name": "Product 0098",
+    "category": "sports",
+    "price": 498.05,
+    "in_stock": false,
+    "created_at": "2026-03-18T00:00:00Z"
+  },
+  {
+    "product_id": 99,
+    "name": "Product 0099",
+    "category": "kitchen",
+    "price": 253.92,
+    "in_stock": false,
+    "created_at": "2026-04-19T00:00:00Z"
+  },
+  {
+    "product_id": 100,
+    "name": "Product 0100",
+    "category": "books",
+    "price": 440.66,
+    "in_stock": true,
+    "created_at": "2026-05-20T00:00:00Z"
+  },
+  {
+    "product_id": 101,
+    "name": "Product 0101",
+    "category": "books",
+    "price": 143.91,
+    "in_stock": true,
+    "created_at": "2026-06-21T00:00:00Z"
+  },
+  {
+    "product_id": 102,
+    "name": "Product 0102",
+    "category": "sports",
+    "price": 352.35,
+    "in_stock": true,
+    "created_at": "2026-07-22T00:00:00Z"
+  },
+  {
+    "product_id": 103,
+    "name": "Product 0103",
+    "category": "garden",
+    "price": 265.4,
+    "in_stock": true,
+    "created_at": "2026-08-23T00:00:00Z"
+  },
+  {
+    "product_id": 104,
+    "name": "Product 0104",
+    "category": "sports",
+    "price": 151.08,
+    "in_stock": true,
+    "created_at": "2026-09-24T00:00:00Z"
+  },
+  {
+    "product_id": 105,
+    "name": "Product 0105",
+    "category": "kitchen",
+    "price": 133.69,
+    "in_stock": true,
+    "created_at": "2026-10-25T00:00:00Z"
+  },
+  {
+    "product_id": 106,
+    "name": "Product 0106",
+    "category": "garden",
+    "price": 277.5,
+    "in_stock": true,
+    "created_at": "2026-11-26T00:00:00Z"
+  },
+  {
+    "product_id": 107,
+    "name": "Product 0107",
+    "category": "sports",
+    "price": 106.88,
+    "in_stock": true,
+    "created_at": "2026-12-27T00:00:00Z"
+  },
+  {
+    "product_id": 108,
+    "name": "Product 0108",
+    "category": "garden",
+    "price": 317.84,
+    "in_stock": true,
+    "created_at": "2026-01-01T00:00:00Z"
+  },
+  {
+    "product_id": 109,
+    "name": "Product 0109",
+    "category": "toys",
+    "price": 127.05,
+    "in_stock": true,
+    "created_at": "2026-02-02T00:00:00Z"
+  },
+  {
+    "product_id": 110,
+    "name": "Product 0110",
+    "category": "electronics",
+    "price": 47.95,
+    "in_stock": true,
+    "created_at": "2026-03-03T00:00:00Z"
+  },
+  {
+    "product_id": 111,
+    "name": "Product 0111",
+    "category": "books",
+    "price": 23.95,
+    "in_stock": true,
+    "created_at": "2026-04-04T00:00:00Z"
+  },
+  {
+    "product_id": 112,
+    "name": "Product 0112",
+    "category": "kitchen",
+    "price": 319.27,
+    "in_stock": true,
+    "created_at": "2026-05-05T00:00:00Z"
+  },
+  {
+    "product_id": 113,
+    "name": "Product 0113",
+    "category": "garden",
+    "price": 222.02,
+    "in_stock": true,
+    "created_at": "2026-06-06T00:00:00Z"
+  },
+  {
+    "product_id": 114,
+    "name": "Product 0114",
+    "category": "sports",
+    "price": 6.81,
+    "in_stock": false,
+    "created_at": "2026-07-07T00:00:00Z"
+  },
+  {
+    "product_id": 115,
+    "name": "Product 0115",
+    "category": "garden",
+    "price": 452.15,
+    "in_stock": true,
+    "created_at": "2026-08-08T00:00:00Z"
+  },
+  {
+    "product_id": 116,
+    "name": "Product 0116",
+    "category": "books",
+    "price": 292.08,
+    "in_stock": false,
+    "created_at": "2026-09-09T00:00:00Z"
+  },
+  {
+    "product_id": 117,
+    "name": "Product 0117",
+    "category": "kitchen",
+    "price": 22.82,
+    "in_stock": true,
+    "created_at": "2026-10-10T00:00:00Z"
+  },
+  {
+    "product_id": 118,
+    "name": "Product 0118",
+    "category": "electronics",
+    "price": 449.65,
+    "in_stock": true,
+    "created_at": "2026-11-11T00:00:00Z"
+  },
+  {
+    "product_id": 119,
+    "name": "Product 0119",
+    "category": "kitchen",
+    "price": 334.12,
+    "in_stock": true,
+    "created_at": "2026-12-12T00:00:00Z"
+  },
+  {
+    "product_id": 120,
+    "name": "Product 0120",
+    "category": "sports",
+    "price": 442.29,
+    "in_stock": true,
+    "created_at": "2026-01-13T00:00:00Z"
+  },
+  {
+    "product_id": 121,
+    "name": "Product 0121",
+    "category": "sports",
+    "price": 375.23,
+    "in_stock": true,
+    "created_at": "2026-02-14T00:00:00Z"
+  },
+  {
+    "product_id": 122,
+    "name": "Product 0122",
+    "category": "kitchen",
+    "price": 432.56,
+    "in_stock": true,
+    "created_at": "2026-03-15T00:00:00Z"
+  },
+  {
+    "product_id": 123,
+    "name": "Product 0123",
+    "category": "kitchen",
+    "price": 440.94,
+    "in_stock": false,
+    "created_at": "2026-04-16T00:00:00Z"
+  },
+  {
+    "product_id": 124,
+    "name": "Product 0124",
+    "category": "garden",
+    "price": 462.38,
+    "in_stock": true,
+    "created_at": "2026-05-17T00:00:00Z"
+  },
+  {
+    "product_id": 125,
+    "name": "Product 0125",
+    "category": "toys",
+    "price": 401.5,
+    "in_stock": true,
+    "created_at": "2026-06-18T00:00:00Z"
+  },
+  {
+    "product_id": 126,
+    "name": "Product 0126",
+    "category": "kitchen",
+    "price": 134.86,
+    "in_stock": true,
+    "created_at": "2026-07-19T00:00:00Z"
+  },
+  {
+    "product_id": 127,
+    "name": "Product 0127",
+    "category": "electronics",
+    "price": 192.5,
+    "in_stock": false,
+    "created_at": "2026-08-20T00:00:00Z"
+  },
+  {
+    "product_id": 128,
+    "name": "Product 0128",
+    "category": "toys",
+    "price": 112.76,
+    "in_stock": true,
+    "created_at": "2026-09-21T00:00:00Z"
+  },
+  {
+    "product_id": 129,
+    "name": "Product 0129",
+    "category": "toys",
+    "price": 176.12,
+    "in_stock": true,
+    "created_at": "2026-10-22T00:00:00Z"
+  },
+  {
+    "product_id": 130,
+    "name": "Product 0130",
+    "category": "kitchen",
+    "price": 113.01,
+    "in_stock": true,
+    "created_at": "2026-11-23T00:00:00Z"
+  },
+  {
+    "product_id": 131,
+    "name": "Product 0131",
+    "category": "toys",
+    "price": 165.46,
+    "in_stock": true,
+    "created_at": "2026-12-24T00:00:00Z"
+  },
+  {
+    "product_id": 132,
+    "name": "Product 0132",
+    "category": "books",
+    "price": 176.86,
+    "in_stock": true,
+    "created_at": "2026-01-25T00:00:00Z"
+  },
+  {
+    "product_id": 133,
+    "name": "Product 0133",
+    "category": "garden",
+    "price": 490.6,
+    "in_stock": true,
+    "created_at": "2026-02-26T00:00:00Z"
+  },
+  {
+    "product_id": 134,
+    "name": "Product 0134",
+    "category": "electronics",
+    "price": 59.43,
+    "in_stock": true,
+    "created_at": "2026-03-27T00:00:00Z"
+  },
+  {
+    "product_id": 135,
+    "name": "Product 0135",
+    "category": "kitchen",
+    "price": 291.12,
+    "in_stock": true,
+    "created_at": "2026-04-01T00:00:00Z"
+  },
+  {
+    "product_id": 136,
+    "name": "Product 0136",
+    "category": "electronics",
+    "price": 55.97,
+    "in_stock": true,
+    "created_at": "2026-05-02T00:00:00Z"
+  },
+  {
+    "product_id": 137,
+    "name": "Product 0137",
+    "category": "garden",
+    "price": 393.63,
+    "in_stock": true,
+    "created_at": "2026-06-03T00:00:00Z"
+  },
+  {
+    "product_id": 138,
+    "name": "Product 0138",
+    "category": "sports",
+    "price": 59.58,
+    "in_stock": true,
+    "created_at": "2026-07-04T00:00:00Z"
+  },
+  {
+    "product_id": 139,
+    "name": "Product 0139",
+    "category": "kitchen",
+    "price": 128.84,
+    "in_stock": true,
+    "created_at": "2026-08-05T00:00:00Z"
+  },
+  {
+    "product_id": 140,
+    "name": "Product 0140",
+    "category": "electronics",
+    "price": 260.91,
+    "in_stock": true,
+    "created_at": "2026-09-06T00:00:00Z"
+  },
+  {
+    "product_id": 141,
+    "name": "Product 0141",
+    "category": "garden",
+    "price": 360.27,
+    "in_stock": true,
+    "created_at": "2026-10-07T00:00:00Z"
+  },
+  {
+    "product_id": 142,
+    "name": "Product 0142",
+    "category": "garden",
+    "price": 100.11,
+    "in_stock": true,
+    "created_at": "2026-11-08T00:00:00Z"
+  },
+  {
+    "product_id": 143,
+    "name": "Product 0143",
+    "category": "garden",
+    "price": 460.53,
+    "in_stock": true,
+    "created_at": "2026-12-09T00:00:00Z"
+  },
+  {
+    "product_id": 144,
+    "name": "Product 0144",
+    "category": "garden",
+    "price": 424.3,
+    "in_stock": true,
+    "created_at": "2026-01-10T00:00:00Z"
+  },
+  {
+    "product_id": 145,
+    "name": "Product 0145",
+    "category": "books",
+    "price": 254.54,
+    "in_stock": true,
+    "created_at": "2026-02-11T00:00:00Z"
+  },
+  {
+    "product_id": 146,
+    "name": "Product 0146",
+    "category": "books",
+    "price": 202.39,
+    "in_stock": true,
+    "created_at": "2026-03-12T00:00:00Z"
+  },
+  {
+    "product_id": 147,
+    "name": "Product 0147",
+    "category": "kitchen",
+    "price": 97.53,
+    "in_stock": true,
+    "created_at": "2026-04-13T00:00:00Z"
+  },
+  {
+    "product_id": 148,
+    "name": "Product 0148",
+    "category": "toys",
+    "price": 339.29,
+    "in_stock": true,
+    "created_at": "2026-05-14T00:00:00Z"
+  },
+  {
+    "product_id": 149,
+    "name": "Product 0149",
+    "category": "sports",
+    "price": 285.4,
+    "in_stock": true,
+    "created_at": "2026-06-15T00:00:00Z"
+  },
+  {
+    "product_id": 150,
+    "name": "Product 0150",
+    "category": "electronics",
+    "price": 153.32,
+    "in_stock": true,
+    "created_at": "2026-07-16T00:00:00Z"
+  },
+  {
+    "product_id": 151,
+    "name": "Product 0151",
+    "category": "sports",
+    "price": 304.11,
+    "in_stock": true,
+    "created_at": "2026-08-17T00:00:00Z"
+  },
+  {
+    "product_id": 152,
+    "name": "Product 0152",
+    "category": "toys",
+    "price": 222.19,
+    "in_stock": true,
+    "created_at": "2026-09-18T00:00:00Z"
+  },
+  {
+    "product_id": 153,
+    "name": "Product 0153",
+    "category": "toys",
+    "price": 397.27,
+    "in_stock": true,
+    "created_at": "2026-10-19T00:00:00Z"
+  },
+  {
+    "product_id": 154,
+    "name": "Product 0154",
+    "category": "garden",
+    "price": 86.5,
+    "in_stock": false,
+    "created_at": "2026-11-20T00:00:00Z"
+  },
+  {
+    "product_id": 155,
+    "name": "Product 0155",
+    "category": "sports",
+    "price": 332.59,
+    "in_stock": true,
+    "created_at": "2026-12-21T00:00:00Z"
+  },
+  {
+    "product_id": 156,
+    "name": "Product 0156",
+    "category": "electronics",
+    "price": 409.56,
+    "in_stock": true,
+    "created_at": "2026-01-22T00:00:00Z"
+  },
+  {
+    "product_id": 157,
+    "name": "Product 0157",
+    "category": "garden",
+    "price": 156.58,
+    "in_stock": true,
+    "created_at": "2026-02-23T00:00:00Z"
+  },
+  {
+    "product_id": 158,
+    "name": "Product 0158",
+    "category": "kitchen",
+    "price": 14.15,
+    "in_stock": true,
+    "created_at": "2026-03-24T00:00:00Z"
+  },
+  {
+    "product_id": 159,
+    "name": "Product 0159",
+    "category": "toys",
+    "price": 306.4,
+    "in_stock": true,
+    "created_at": "2026-04-25T00:00:00Z"
+  },
+  {
+    "product_id": 160,
+    "name": "Product 0160",
+    "category": "toys",
+    "price": 208.38,
+    "in_stock": true,
+    "created_at": "2026-05-26T00:00:00Z"
+  },
+  {
+    "product_id": 161,
+    "name": "Product 0161",
+    "category": "kitchen",
+    "price": 359.73,
+    "in_stock": true,
+    "created_at": "2026-06-27T00:00:00Z"
+  },
+  {
+    "product_id": 162,
+    "name": "Product 0162",
+    "category": "toys",
+    "price": 123.49,
+    "in_stock": true,
+    "created_at": "2026-07-01T00:00:00Z"
+  },
+  {
+    "product_id": 163,
+    "name": "Product 0163",
+    "category": "electronics",
+    "price": 446.53,
+    "in_stock": true,
+    "created_at": "2026-08-02T00:00:00Z"
+  },
+  {
+    "product_id": 164,
+    "name": "Product 0164",
+    "category": "electronics",
+    "price": 389.64,
+    "in_stock": true,
+    "created_at": "2026-09-03T00:00:00Z"
+  },
+  {
+    "product_id": 165,
+    "name": "Product 0165",
+    "category": "garden",
+    "price": 259.93,
+    "in_stock": false,
+    "created_at": "2026-10-04T00:00:00Z"
+  },
+  {
+    "product_id": 166,
+    "name": "Product 0166",
+    "category": "kitchen",
+    "price": 458.89,
+    "in_stock": false,
+    "created_at": "2026-11-05T00:00:00Z"
+  },
+  {
+    "product_id": 167,
+    "name": "Product 0167",
+    "category": "kitchen",
+    "price": 401.1,
+    "in_stock": true,
+    "created_at": "2026-12-06T00:00:00Z"
+  },
+  {
+    "product_id": 168,
+    "name": "Product 0168",
+    "category": "sports",
+    "price": 298.53,
+    "in_stock": true,
+    "created_at": "2026-01-07T00:00:00Z"
+  },
+  {
+    "product_id": 169,
+    "name": "Product 0169",
+    "category": "toys",
+    "price": 307.09,
+    "in_stock": true,
+    "created_at": "2026-02-08T00:00:00Z"
+  },
+  {
+    "product_id": 170,
+    "name": "Product 0170",
+    "category": "sports",
+    "price": 214.51,
+    "in_stock": true,
+    "created_at": "2026-03-09T00:00:00Z"
+  },
+  {
+    "product_id": 171,
+    "name": "Product 0171",
+    "category": "toys",
+    "price": 448.8,
+    "in_stock": true,
+    "created_at": "2026-04-10T00:00:00Z"
+  },
+  {
+    "product_id": 172,
+    "name": "Product 0172",
+    "category": "toys",
+    "price": 226.12,
+    "in_stock": true,
+    "created_at": "2026-05-11T00:00:00Z"
+  },
+  {
+    "product_id": 173,
+    "name": "Product 0173",
+    "category": "garden",
+    "price": 140.09,
+    "in_stock": true,
+    "created_at": "2026-06-12T00:00:00Z"
+  },
+  {
+    "product_id": 174,
+    "name": "Product 0174",
+    "category": "toys",
+    "price": 314.11,
+    "in_stock": true,
+    "created_at": "2026-07-13T00:00:00Z"
+  },
+  {
+    "product_id": 175,
+    "name": "Product 0175",
+    "category": "electronics",
+    "price": 357.34,
+    "in_stock": true,
+    "created_at": "2026-08-14T00:00:00Z"
+  },
+  {
+    "product_id": 176,
+    "name": "Product 0176",
+    "category": "books",
+    "price": 161.21,
+    "in_stock": true,
+    "created_at": "2026-09-15T00:00:00Z"
+  },
+  {
+    "product_id": 177,
+    "name": "Product 0177",
+    "category": "kitchen",
+    "price": 77.1,
+    "in_stock": true,
+    "created_at": "2026-10-16T00:00:00Z"
+  },
+  {
+    "product_id": 178,
+    "name": "Product 0178",
+    "category": "kitchen",
+    "price": 353.79,
+    "in_stock": false,
+    "created_at": "2026-11-17T00:00:00Z"
+  },
+  {
+    "product_id": 179,
+    "name": "Product 0179",
+    "category": "toys",
+    "price": 166.77,
+    "in_stock": true,
+    "created_at": "2026-12-18T00:00:00Z"
+  },
+  {
+    "product_id": 180,
+    "name": "Product 0180",
+    "category": "electronics",
+    "price": 104.99,
+    "in_stock": true,
+    "created_at": "2026-01-19T00:00:00Z"
+  },
+  {
+    "product_id": 181,
+    "name": "Product 0181",
+    "category": "sports",
+    "price": 473.13,
+    "in_stock": false,
+    "created_at": "2026-02-20T00:00:00Z"
+  },
+  {
+    "product_id": 182,
+    "name": "Product 0182",
+    "category": "sports",
+    "price": 191.42,
+    "in_stock": false,
+    "created_at": "2026-03-21T00:00:00Z"
+  },
+  {
+    "product_id": 183,
+    "name": "Product 0183",
+    "category": "books",
+    "price": 150.7,
+    "in_stock": true,
+    "created_at": "2026-04-22T00:00:00Z"
+  },
+  {
+    "product_id": 184,
+    "name": "Product 0184",
+    "category": "toys",
+    "price": 270.02,
+    "in_stock": true,
+    "created_at": "2026-05-23T00:00:00Z"
+  },
+  {
+    "product_id": 185,
+    "name": "Product 0185",
+    "category": "sports",
+    "price": 449.1,
+    "in_stock": true,
+    "created_at": "2026-06-24T00:00:00Z"
+  },
+  {
+    "product_id": 186,
+    "name": "Product 0186",
+    "category": "books",
+    "price": 219.04,
+    "in_stock": false,
+    "created_at": "2026-07-25T00:00:00Z"
+  },
+  {
+    "product_id": 187,
+    "name": "Product 0187",
+    "category": "books",
+    "price": 335.09,
+    "in_stock": true,
+    "created_at": "2026-08-26T00:00:00Z"
+  },
+  {
+    "product_id": 188,
+    "name": "Product 0188",
+    "category": "garden",
+    "price": 84.18,
+    "in_stock": true,
+    "created_at": "2026-09-27T00:00:00Z"
+  },
+  {
+    "product_id": 189,
+    "name": "Product 0189",
+    "category": "kitchen",
+    "price": 490.39,
+    "in_stock": true,
+    "created_at": "2026-10-01T00:00:00Z"
+  },
+  {
+    "product_id": 190,
+    "name": "Product 0190",
+    "category": "toys",
+    "price": 296.75,
+    "in_stock": true,
+    "created_at": "2026-11-02T00:00:00Z"
+  },
+  {
+    "product_id": 191,
+    "name": "Product 0191",
+    "category": "electronics",
+    "price": 322.08,
+    "in_stock": false,
+    "created_at": "2026-12-03T00:00:00Z"
+  },
+  {
+    "product_id": 192,
+    "name": "Product 0192",
+    "category": "toys",
+    "price": 92.49,
+    "in_stock": true,
+    "created_at": "2026-01-04T00:00:00Z"
+  },
+  {
+    "product_id": 193,
+    "name": "Product 0193",
+    "category": "books",
+    "price": 107.4,
+    "in_stock": true,
+    "created_at": "2026-02-05T00:00:00Z"
+  },
+  {
+    "product_id": 194,
+    "name": "Product 0194",
+    "category": "toys",
+    "price": 140.56,
+    "in_stock": true,
+    "created_at": "2026-03-06T00:00:00Z"
+  },
+  {
+    "product_id": 195,
+    "name": "Product 0195",
+    "category": "toys",
+    "price": 127.62,
+    "in_stock": false,
+    "created_at": "2026-04-07T00:00:00Z"
+  },
+  {
+    "product_id": 196,
+    "name": "Product 0196",
+    "category": "electronics",
+    "price": 375.0,
+    "in_stock": false,
+    "created_at": "2026-05-08T00:00:00Z"
+  },
+  {
+    "product_id": 197,
+    "name": "Product 0197",
+    "category": "books",
+    "price": 113.65,
+    "in_stock": false,
+    "created_at": "2026-06-09T00:00:00Z"
+  },
+  {
+    "product_id": 198,
+    "name": "Product 0198",
+    "category": "garden",
+    "price": 22.04,
+    "in_stock": false,
+    "created_at": "2026-07-10T00:00:00Z"
+  },
+  {
+    "product_id": 199,
+    "name": "Product 0199",
+    "category": "kitchen",
+    "price": 101.27,
+    "in_stock": false,
+    "created_at": "2026-08-11T00:00:00Z"
+  },
+  {
+    "product_id": 200,
+    "name": "Product 0200",
+    "category": "kitchen",
+    "price": 120.79,
+    "in_stock": true,
+    "created_at": "2026-09-12T00:00:00Z"
+  }
+]
