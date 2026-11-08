@@ -6,6 +6,7 @@ external API) -- run explicitly with ``-m network``.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -53,3 +54,74 @@ class TestRestConnectorAgainstRealApis:
         # worth of rows proves pagination actually ran, not just page 1.
         assert breweries.num_rows > 50
         assert "name" in breweries.column_names
+
+
+class TestRestSourcesActuallyLoadIntoIceberg:
+    """Point 3 of the follow-up review: extraction alone (above) isn't the
+    same as `dhd ingest-dlt` actually committing the result into Iceberg --
+    exercised here through the real CLI end to end, against the real
+    public APIs, on a throwaway local warehouse."""
+
+    @pytest.fixture
+    def pyiceberg_env(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ICEBERG_WAREHOUSE", "")
+        monkeypatch.setenv("ICEBERG_WAREHOUSE_PATH", str(tmp_path / "wh"))
+        monkeypatch.setenv("ICEBERG_NAMESPACE", "default")
+        monkeypatch.delenv("ICEBERG_CATALOG_URI", raising=False)
+        monkeypatch.delenv("DHD_ENGINE", raising=False)
+
+    def test_jsonplaceholder_loads_and_is_queryable(self, pyiceberg_env):
+        from click.testing import CliRunner
+
+        from datahut_duckhouse import cli as cli_mod
+
+        runner = CliRunner()
+        r = runner.invoke(
+            cli_mod.cli,
+            ["--engine", "pyiceberg", "ingest-dlt", "--source", "jsonplaceholder"],
+        )
+        assert r.exit_code == 0, r.output
+        assert "jsonplaceholder_users" in r.output
+        assert "jsonplaceholder_posts" in r.output
+
+        r = runner.invoke(
+            cli_mod.cli,
+            [
+                "--engine",
+                "pyiceberg",
+                "query",
+                "SELECT count(*) AS n FROM jsonplaceholder_users",
+                "--format",
+                "json",
+            ],
+        )
+        assert r.exit_code == 0, r.output
+        assert '"n": 10' in r.output
+
+    def test_open_brewery_db_loads_and_rerun_does_not_duplicate(self, pyiceberg_env):
+        from click.testing import CliRunner
+
+        from datahut_duckhouse import cli as cli_mod
+
+        runner = CliRunner()
+        for _ in range(2):  # write_disposition: replace -- must not duplicate
+            r = runner.invoke(
+                cli_mod.cli,
+                ["--engine", "pyiceberg", "ingest-dlt", "--source", "open_brewery_db"],
+            )
+            assert r.exit_code == 0, r.output
+
+        r = runner.invoke(
+            cli_mod.cli,
+            [
+                "--engine",
+                "pyiceberg",
+                "query",
+                "SELECT count(*) AS n FROM open_brewery_db_breweries",
+                "--format",
+                "json",
+            ],
+        )
+        assert r.exit_code == 0, r.output
+        count = json.loads(r.output)[0]["n"]
+        assert count > 50  # same pagination floor as the extraction-only test above
