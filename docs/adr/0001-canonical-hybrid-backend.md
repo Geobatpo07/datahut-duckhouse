@@ -204,6 +204,71 @@ suite mocked the xorq API rather than running it. Covered now by
 `iceberg_backend.py` (dead code doing S3 I/O at import time) was also deleted in this
 pass.
 
+### Segfault root cause (2026-11-08, `fix/segfault-diagnosis`)
+
+Found and **verified** the cause of the `dhd create-table` / `dhd query` segfault
+documented in the README's "Known gaps" (xorq 0.4.11, 100% reproducible against a
+real Dockerized flight-server + real MinIO). It is not in `HybridBackend`, not in
+MinIO/S3 I/O, and not xorq-version-specific — it is a **client/server Python
+minor-version mismatch** breaking `cloudpickle`'s cross-version reconstruction of
+`xorq.vendor.ibis.common.grounds.Annotable` (the base class of the vendored
+`Schema` type).
+
+Mechanism: `GetSchemaQueryAction.do_action` (`xorq/flight/action.py`) returns the
+query's schema via `make_flight_result = compose(paf.Result, pa.py_buffer, dumps)`
+— i.e. `cloudpickle.dumps(schema)`. The client's `FlightClient._do_action`
+(`xorq/flight/client.py`) then calls `cloudpickle.loads(result.body.to_pybytes())`.
+`Annotable.__reduce__` (`xorq/vendor/ibis/common/grounds.py`) pickles itself as
+`(self.__recreate__, (state,))` — a bound classmethod reference that cloudpickle
+must resolve against the *unpickling* process's own copy of the class. `dhd
+create-table`'s confirmation step and `dhd query` both exercise this path (via
+`_get_schema_using_query`); `dhd list-tables` and `dhd insert` never call it, which
+is exactly the working/broken split already observed and documented in the README.
+
+Verified (not hypothesis), in order:
+
+1. `scripts/repro_segfault.py` (a bare `pyarrow.flight.FlightClient`, no xorq) shows
+   the gRPC round trip itself (`do_action` → `result.body.to_pybytes()`) is clean;
+   only the subsequent `cloudpickle.loads()` of the schema bytes is implicated.
+2. Replaying those same saved bytes offline (no network) deterministically raises
+   `SystemError: <function Annotable.__recreate__ ...> returned NULL without
+   setting an exception` when run standalone — a C-API contract violation, not an
+   ordinary Python exception. Run live (through the real client), the exact same
+   payload instead segfaults (`Windows fatal exception: access violation`, exit
+   139) — i.e. the *failure mode* (clean exception vs. hard crash) depends on
+   process state, but the trigger is the same.
+3. Host (Windows, Python 3.12.7) client → container (Linux, Python 3.11.18)
+   server, real Docker + real MinIO: crashes, 100% reproducible.
+4. The identical client code run **from inside the flight-server container**
+   (Python 3.11, same real Docker + MinIO server): no crash, `create-table` and
+   `query` both succeed.
+5. A client on the **host** but in a separate `uv venv --python 3.11.15` (same
+   packages reinstalled from this repo, Windows, no container): no crash either,
+   against the exact same Docker + MinIO server. This isolates the variable to the
+   Python *version* match, not the OS (Windows vs. Linux) or the warehouse backend
+   (local fs / MinIO) — both of which were confounded in the container-vs-host
+   comparison in step 4.
+6. `.venv`'s host Python (3.12.7) was resolved by `uv sync` from
+   `pyproject.toml`'s `requires-python = ">=3.11,<3.13"` — a *range*, not a pin —
+   while `.devcontainer/flight-server.Dockerfile` hardcodes `ARG
+   PYTHON_VERSION=3.11`. Nothing enforces these two stay in lockstep; this gap is
+   the proximate cause of the version drift that triggers the bug.
+
+Not fixed here, deliberately: the underlying fragility — `cloudpickle` reconstructing
+a custom `Annotable` class across a Python minor-version boundary — lives in `xorq`'s
+vendored `ibis` + its `cloudpickle` usage, not in this repo's code, and is out of
+scope for a "don't rewrite HybridBackend" diagnosis pass. See
+[`docs/UPSTREAM_ISSUE.md`](../UPSTREAM_ISSUE.md) for the upstream-issue draft and
+`tests/test_python_version_matches_flight_image.py` for the regression guard added
+in this repo (fails loudly on a version mismatch instead of segfaulting later).
+**Mitigation available today:** keep the Python version used to `uv sync` the host
+venv identical to `.devcontainer/flight-server.Dockerfile`'s `PYTHON_VERSION` (either
+pin a `.python-version` file and re-`uv sync`, or rebuild the image with
+`--build-arg PYTHON_VERSION=<host version>`) — verified to fully avoid the crash in
+both directions above. Not applied automatically in this pass, since it would force
+re-creating the existing dev `.venv` or rebuilding the Docker image; left as a
+decision for whoever merges this branch.
+
 ### Still open
 
 - The per-write snapshot + full-table reflection don't scale; revisit together when
@@ -214,3 +279,7 @@ pass.
   hung server makes any Flight caller (`dhd` included) block rather than fail fast. The
   CLI does a cheap TCP pre-check to cover the common "server not started" case; a real
   timeout would need an upstream fix or a wrapper, deferred.
+- `requires-python`'s range (`>=3.11,<3.13`) vs. the Docker image's exact pin
+  (`3.11`) can silently drift apart again (see "Segfault root cause" above);
+  `tests/test_python_version_matches_flight_image.py` catches this for the local
+  dev venv but there's no equivalent CI check against the built image yet.

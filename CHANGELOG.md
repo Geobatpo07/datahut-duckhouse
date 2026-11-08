@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Investigated
+
+- **`dhd create-table` / `dhd query` segfault root cause found and verified**
+  (`fix/segfault-diagnosis`): a client/server Python *minor*-version mismatch
+  breaks `cloudpickle`'s cross-version reconstruction of xorq's vendored
+  `ibis` `Schema`/`Annotable` class on the `get_schema_using_query` Flight
+  action — not MinIO, not Docker networking, not an xorq regression. Verified
+  in both directions with a minimal reproducer (`scripts/repro_segfault.py`)
+  and a temporary `uv venv --python 3.11`. Not fixed in this repo (the
+  fragile part is upstream, in xorq + cloudpickle — draft issue at
+  `docs/UPSTREAM_ISSUE.md`); a working mitigation (pin matching Python
+  versions) is documented but not applied. New regression guard,
+  `tests/test_python_version_matches_flight_image.py`, intentionally fails on
+  this dev machine until that's done. Full writeup in ADR-0001.
+
 ### Works today
 
 - Multi-engine ingestion benchmark (Vague 1): `ingestion/dlt/` extracts any

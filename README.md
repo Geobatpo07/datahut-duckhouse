@@ -160,6 +160,25 @@ table's `Schema` (`create-table`'s confirmation step, `query`) crashes the
 `dhd` client process outright (`Windows fatal exception: access violation` /
 SIGSEGV); `list-tables` and `insert` do not and work fine.
 
+**Root cause found and verified (2026-11-08, `fix/segfault-diagnosis`):** it's
+a client/server **Python minor-version mismatch**, not MinIO, not Docker
+networking, and not an xorq-version regression. `cloudpickle`'s
+reconstruction of xorq's vendored `ibis` `Schema`/`Annotable` class breaks
+across a Python minor-version boundary — this host's dev venv resolved to
+Python 3.12.7 (`pyproject.toml`'s `requires-python = ">=3.11,<3.13"` is a
+*range*), while `.devcontainer/flight-server.Dockerfile` pins the image to
+Python 3.11. Verified in both directions: a Python-3.11 client (either from
+inside the container, or from a separate `uv venv --python 3.11` on this same
+Windows host) never crashes against the exact same Docker + MinIO server; a
+Python-3.12 client crashes 100% of the time. Full mechanism, the minimal
+reproducer (`scripts/repro_segfault.py`), and the draft upstream issue are in
+[ADR-0001](docs/adr/0001-canonical-hybrid-backend.md#segfault-root-cause-2026-11-08-fixsegfault-diagnosis)
+and [`docs/UPSTREAM_ISSUE.md`](docs/UPSTREAM_ISSUE.md).
+`tests/test_python_version_matches_flight_image.py` guards against this
+regressing silently again (currently **fails on this dev machine** — Python
+3.12 vs. the image's pinned 3.11 — by design, until one side is repinned; see
+that test's docstring for the exact fix recipe).
+
 **The working path against Docker today is `--engine pyiceberg`**, verified
 for the full round trip:
 
@@ -334,6 +353,7 @@ datahut-duckhouse/
 │   ├── fetch_chinook.py  # downloads the Chinook SQLite fixture on demand
 │   ├── demo.py           # one-command multi-engine demo (Vague 1)
 │   ├── bench_writes.py   # Iceberg write/commit cost benchmark (Vague 1)
+│   ├── repro_segfault.py # minimal segfault reproducer (fix/segfault-diagnosis)
 │   └── smoke_test.py     # Docker round-trip smoke test (CI: integration.yml)
 ├── query_engine/         # unified DuckDB/Trino query-routing prototype
 ├── transform/dbt_project/ # dbt models (config/profiles.yml, target=dev|prod)
@@ -347,7 +367,8 @@ datahut-duckhouse/
 │   ├── adr/              # Architecture Decision Records (0001–0005)
 │   ├── ROADMAP.md        # phased plan, single source of truth on status
 │   ├── DOGFOOD.md        # Vague 1: measured numbers, frictions, open questions
-│   └── THIRD_PARTY_CHINOOK.md  # Chinook dataset license + pinned commit
+│   ├── THIRD_PARTY_CHINOOK.md  # Chinook dataset license + pinned commit
+│   └── UPSTREAM_ISSUE.md # draft xorq issue: segfault root cause (not posted)
 ├── docker-compose.test.yml  # Postgres/MySQL/(optional SQL Server) Chinook fixtures
 ├── .devcontainer/        # Dockerfiles + devcontainer.json + .env.example
 ├── .env                  # Secrets & config (git-ignored; from .devcontainer/.env.example)
@@ -470,6 +491,18 @@ for that future work, not a working path today.
   server + real MinIO**, on xorq 0.4.11, 100% reproducible — see
   [Démarrage rapide (Docker)](#-démarrage-rapide-docker). Use `--engine
   pyiceberg` instead; it's the only verified-working path against Docker.
+  **Root cause found (2026-11-08):** a client/server Python minor-version
+  mismatch breaks `cloudpickle` across the Flight schema round trip — see the
+  "Root cause found and verified" note above, [ADR-0001](docs/adr/0001-canonical-hybrid-backend.md#segfault-root-cause-2026-11-08-fixsegfault-diagnosis)
+  and [`docs/UPSTREAM_ISSUE.md`](docs/UPSTREAM_ISSUE.md). Not fixed in this
+  repo (the fragile part is upstream, in xorq's vendored `ibis` +
+  `cloudpickle`); a documented mitigation exists (pin matching Python
+  versions) but was not applied, since it would force recreating the dev
+  `.venv` or rebuilding the Docker image.
+- `tests/test_python_version_matches_flight_image.py` currently **fails on
+  this dev machine** (host Python 3.12 vs. the flight-server image's pinned
+  3.11) — intentional, see the test's docstring; it's the regression guard
+  for the gap above, not a new unrelated breakage.
 - `config/trino/etc/catalog/iceberg.properties` hardcodes MinIO credentials —
   see the warning in step 3 above.
 
