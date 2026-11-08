@@ -85,12 +85,13 @@ ingestion/data/pyiceberg_catalog.db
 tests/data/Chinook_Sqlite.sqlite
 # dlt's own state/working dirs (pipeline run metadata, staged parquet)
 .dlt/
-ingestion/dlt/_pipeline_data/
+ingestion/_pipeline_data/
 scripts/_bench_work/
-# Vague 1b: incremental-cursor state (connectors/_state.py) and the files
-# connector's HTTP download cache -- both ephemeral, per-machine.
-ingestion/dlt/_state/
-ingestion/dlt/_cache/
+# Vague 1b: incremental-cursor state (engine/state.py), the run log's local
+# SQLite fallback (runs/store.py), and the files connector's HTTP download
+# cache -- all ephemeral, per-machine.
+ingestion/_state/
+ingestion/_cache/
 scripts/_dlt_eval_work/
 
 # fix/segfault-diagnosis: raw bytes dumped by scripts/repro_segfault.py

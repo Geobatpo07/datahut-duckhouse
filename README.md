@@ -377,8 +377,7 @@ datahut-duckhouse/
 │   ├── connection.py     # flight engine: connects to the Flight server
 │   ├── flight_version_guard.py  # refuses a Python-minor-version-mismatched server
 │   ├── ingest.py         # pyiceberg engine: talks to Iceberg directly, no xorq
-│   ├── ingest_dlt.py     # `dhd ingest-dlt`: loads dlt-extracted sources into Iceberg
-│   └── ingest_run_log.py # one row per table per run, falls back to local SQLite
+│   └── ingest_dlt.py     # `dhd ingest-dlt`: thin adapter over ingestion/'s public API
 ├── flight_server/        # Arrow Flight Server + HybridBackend
 │   └── app/
 │       ├── app_xorq.py
@@ -389,13 +388,15 @@ datahut-duckhouse/
 │       └── backends/hybrid_backend.py
 ├── orchestrator/         # standalone FastAPI orchestration API (xorq-service)
 ├── xorq-admin-dashboard/ # React/Vite admin UI, served by nginx (xorq-admin)
-├── ingestion/
+├── ingestion/            # multi-engine extraction (extra `ingest`) -- see
+│   │                     # docs/INGESTION_ARCHITECTURE.md for the layer map
 │   ├── data/             # Source CSV + local duckhouse.duckdb
-│   └── dlt/              # multi-engine extraction (extra `ingest`)
-│       ├── sources.yml   # the source registry (sql/files/rest, see docs/INGESTION.md)
-│       ├── registry.py   # pydantic schema + validation for sources.yml
-│       ├── pipeline.py   # dispatches to connectors/ by family
-│       └── connectors/   # sql.py, files.py, rest.py -- one extractor each
+│   ├── __init__.py       # public API: list_sources, run_source, ...
+│   ├── config/           # SourceConfig (pydantic), validation rules, sources.yml
+│   ├── connectors/       # sql.py, files.py, rest.py -- one extractor each
+│   ├── engine/           # DltIngestor (orchestration) + incremental-cursor state
+│   ├── sinks/            # FlightSink (replace/append), DirectSink (merge), catalog_guard
+│   └── runs/             # the run log (_ingest_runs + local SQLite fallback)
 ├── scripts/              # Ingestion, queries, tenant management, dbt runner
 │   ├── new_source.py     # generates a sources.yml entry + skeleton test
 │   ├── ingest_flight.py

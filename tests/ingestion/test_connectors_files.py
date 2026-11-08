@@ -6,48 +6,31 @@ stays deterministic and network-free)."""
 from __future__ import annotations
 
 import http.server
-import importlib.util
-import sys
 import threading
-from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent
-
-
-def _load_pipeline_module():
-    spec = importlib.util.spec_from_file_location(
-        "dlt_pipeline_files_connector_test",
-        REPO_ROOT / "ingestion" / "dlt" / "pipeline.py",
-    )
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-@pytest.fixture(scope="module")
-def pipeline():
-    return _load_pipeline_module()
+from ingestion.config.models import SourceConfig
+from ingestion.config.registry import get_source
+from ingestion.connectors import files
 
 
 class TestFilesConnectorAgainstFixedData:
-    def test_csv_source(self, pipeline, tmp_path):
+    def test_csv_source(self, tmp_path):
         import pyarrow.parquet as papq
 
-        source = pipeline.get_source("disease_symptoms_csv")
-        written = pipeline.extract_source(source, work_dir=tmp_path)
+        source = get_source("disease_symptoms_csv")
+        written = files.build_resources(source, work_dir=tmp_path)
         (path,) = written.values()
         table = papq.read_table(path)
         assert table.num_rows == 21369
         assert "Disease" in table.column_names
 
-    def test_json_source(self, pipeline, tmp_path):
+    def test_json_source(self, tmp_path):
         import pyarrow.parquet as papq
 
-        source = pipeline.get_source("sample_products_json")
-        written = pipeline.extract_source(source, work_dir=tmp_path)
+        source = get_source("sample_products_json")
+        written = files.build_resources(source, work_dir=tmp_path)
         (path,) = written.values()
         table = papq.read_table(path)
         assert table.num_rows == 200
@@ -59,7 +42,7 @@ class TestFilesConnectorAgainstFixedData:
             "in_stock",
         }
 
-    def test_nested_json_is_flattened(self, pipeline, tmp_path):
+    def test_nested_json_is_flattened(self, tmp_path):
         import json
 
         import pyarrow.parquet as papq
@@ -71,14 +54,14 @@ class TestFilesConnectorAgainstFixedData:
         source_path = tmp_path / "nested.json"
         source_path.write_text(json.dumps(records))
 
-        source = pipeline.SourceConfig(
+        source = SourceConfig(
             name="nested_test",
             family="files",
             connector="local_file",
             path=str(source_path),
             format="json",
         )
-        written = pipeline.extract_source(source, work_dir=tmp_path / "out")
+        written = files.build_resources(source, work_dir=tmp_path / "out")
         (out_path,) = written.values()
         table = papq.read_table(out_path)
         assert set(table.column_names) == {"id", "address_city", "address_zip"}
@@ -107,19 +90,17 @@ class TestFilesConnectorHttpFetch:
             server.shutdown()
             thread.join(timeout=5)
 
-    def test_http_url_is_downloaded_then_read(
-        self, pipeline, local_csv_server, tmp_path
-    ):
+    def test_http_url_is_downloaded_then_read(self, local_csv_server, tmp_path):
         import pyarrow.parquet as papq
 
-        source = pipeline.SourceConfig(
+        source = SourceConfig(
             name="http_test",
             family="files",
             connector="local_file",
             http_url=local_csv_server,
             format="csv",
         )
-        written = pipeline.extract_source(source, work_dir=tmp_path)
+        written = files.build_resources(source, work_dir=tmp_path)
         (path,) = written.values()
         table = papq.read_table(path)
         assert table.to_pylist() == [

@@ -12,10 +12,9 @@ rather than erroring the whole module if only one engine is unavailable.
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import socket
-import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -38,19 +37,22 @@ def _default_chinook_env():
         os.environ.setdefault(key, value)
 
 
-def _load_pipeline_module():
-    spec = importlib.util.spec_from_file_location(
-        "dlt_pipeline_integration", REPO_ROOT / "ingestion" / "dlt" / "pipeline.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 @pytest.fixture(scope="session")
 def pipeline():
-    return _load_pipeline_module()
+    """A thin namespace matching the old ``ingestion/dlt/pipeline.py``'s
+    surface, now backed by the real ``ingestion`` package (step A
+    restructuring) -- kept so this module's test bodies didn't need
+    rewriting, only this fixture."""
+    import ingestion
+    from ingestion.config.models import SourceConfig
+    from ingestion.config.registry import get_source, prefixed_table_name
+
+    return types.SimpleNamespace(
+        extract_source=ingestion.extract_source,
+        get_source=get_source,
+        prefixed_table_name=prefixed_table_name,
+        SourceConfig=SourceConfig,
+    )
 
 
 def _port_open(host: str, port: int, timeout: float = 2.0) -> bool:

@@ -337,19 +337,17 @@ def ingest_dlt(source_name: str | None, run_all: bool, dry_run: bool) -> None:
 
 @cli.group()
 def sources() -> None:
-    """Inspect ingestion/dlt/sources.yml (the source registry)."""
+    """Inspect ingestion/config/sources.yml (the source registry)."""
 
 
 @sources.command("validate")
 def sources_validate() -> None:
     """Validate sources.yml against the registry schema (readable line/field errors)."""
-    from datahut_duckhouse.ingest_dlt import _load_pipeline
+    from ingestion import SourcesConfigError, validate_registry
 
-    pipeline = _load_pipeline()
-    warnings: list[str] = []
     try:
-        configs = pipeline.load_sources(collect_warnings=warnings)
-    except pipeline.SourcesConfigError as exc:
+        configs, warnings = validate_registry()
+    except SourcesConfigError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(f"OK: {len(configs)} source(s) valid.")
     for config in configs:
@@ -361,12 +359,11 @@ def sources_validate() -> None:
 @sources.command("list")
 def sources_list() -> None:
     """List configured sources: name, family, connector, write_disposition, schedule, network."""
-    from datahut_duckhouse.ingest_dlt import _load_pipeline
+    from ingestion import SourcesConfigError, list_sources
 
-    pipeline = _load_pipeline()
     try:
-        configs = pipeline.load_sources()
-    except pipeline.SourcesConfigError as exc:
+        configs = list_sources()
+    except SourcesConfigError as exc:
         raise click.ClickException(str(exc)) from exc
     if not configs:
         click.echo("(no sources configured)")

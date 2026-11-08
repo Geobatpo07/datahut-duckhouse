@@ -1,9 +1,11 @@
 """The ``rest`` connector family (Vague 1b, task 2): dlt's declarative
 ``rest_api_source`` (no custom per-API code -- ``source.base_url`` +
-``source.resources`` + the free-form ``source.rest_options`` passed straight
-through to dlt's own endpoint/paginator config). Verified live against two
-key-free public APIs, see ``ingestion/dlt/sources.yml``'s ``jsonplaceholder``
-(single page) and ``open_brewery_db`` (paginated) entries.
+``source.resources`` + the free-form ``source.rest_options`` passed
+straight through to dlt's own endpoint/paginator config), via
+``_dlt_sources.py`` so this module itself never imports ``dlt`` directly.
+Verified live against two key-free public APIs, see
+``ingestion/config/sources.yml``'s ``jsonplaceholder`` (single page) and
+``open_brewery_db`` (paginated) entries.
 """
 
 from __future__ import annotations
@@ -13,9 +15,11 @@ from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as papq
-from registry import SourceConfig, prefixed_table_name
 
-from connectors.files import _flatten
+from ingestion.config.models import SourceConfig
+from ingestion.config.registry import prefixed_table_name
+from ingestion.connectors import _dlt_sources
+from ingestion.connectors.files import _flatten
 
 
 def _build_config(source: SourceConfig) -> dict[str, Any]:
@@ -35,10 +39,8 @@ def _build_config(source: SourceConfig) -> dict[str, Any]:
     return {"client": client, "resources": resources}
 
 
-def extract_source(source: SourceConfig, work_dir: Path) -> dict[str, Path]:
-    from dlt.sources.rest_api import rest_api_source
-
-    rest_source = rest_api_source(_build_config(source))  # type: ignore[arg-type]
+def build_resources(source: SourceConfig, work_dir: Path) -> dict[str, Path]:
+    rest_source = _dlt_sources.rest_api_source(_build_config(source))
 
     work_dir.mkdir(parents=True, exist_ok=True)
     written: dict[str, Path] = {}

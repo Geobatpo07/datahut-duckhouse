@@ -1,8 +1,11 @@
 # Ingestion: the source registry (Vague 1b)
 
 How to add a source to `dhd ingest-dlt`, and what each registry field
-means. Results from actually running this at scale (incremental, schema
-evolution, crash-resume, volume) are in [docs/DLT_EVAL.md](DLT_EVAL.md).
+means. For the module layout behind this command (``ingestion/``'s
+layers and their dependency rules), see
+[docs/INGESTION_ARCHITECTURE.md](INGESTION_ARCHITECTURE.md). Results from
+actually running this at scale (incremental, schema evolution,
+crash-resume, volume) are in [docs/DLT_EVAL.md](DLT_EVAL.md).
 
 ## Adding a source in 5 steps
 
@@ -12,8 +15,8 @@ evolution, crash-resume, volume) are in [docs/DLT_EVAL.md](DLT_EVAL.md).
    uv run python scripts/new_source.py sql my_source     # or: files | rest
    ```
 
-   This appends a `TODO`-annotated entry to `ingestion/dlt/sources.yml` and
-   writes `tests/test_source_my_source.py`.
+   This appends a `TODO`-annotated entry to `ingestion/config/sources.yml`
+   and writes `tests/test_source_my_source.py`.
 
 2. **Fill in the `TODO`s** the generator printed -- the real `secret_ref`
    (an environment variable *name*, never the value), the real
@@ -39,8 +42,10 @@ evolution, crash-resume, volume) are in [docs/DLT_EVAL.md](DLT_EVAL.md).
    uv run pytest tests/test_source_my_source.py
    ```
 
-No code change is needed in `pipeline.py` or `connectors/` for any of
-this -- adding a source is purely a `sources.yml` edit. `--all` runs every
+No code change is needed anywhere in `ingestion/` for any of this --
+adding a source is purely a `sources.yml` edit (see
+[docs/INGESTION_ARCHITECTURE.md](INGESTION_ARCHITECTURE.md) for the
+module layout). `--all` runs every
 configured source; `--dry-run` validates and prints the resolved plan
 (family, connector, resources, write_disposition, schema_contract, whether
 it hits a real network) without touching Iceberg or the network at all.
@@ -49,15 +54,16 @@ it hits a real network) without touching Iceberg or the network at all.
 
 | Family | Connector module | What it wraps |
 |---|---|---|
-| `sql` | `connectors/sql.py` | dlt's `sql_database` (SQLAlchemy: sqlite3 stdlib, psycopg2, pymysql, pymssql) |
-| `files` | `connectors/files.py` | Local CSV/JSON/Parquet via pyarrow, optionally fetched over HTTP first (`http_url`) |
-| `rest` | `connectors/rest.py` | dlt's declarative `rest_api_source` |
+| `sql` | `ingestion/connectors/sql.py` | dlt's `sql_database` (SQLAlchemy: sqlite3 stdlib, psycopg2, pymysql, pymssql) |
+| `files` | `ingestion/connectors/files.py` | Local CSV/JSON/Parquet via pyarrow, optionally fetched over HTTP first (`http_url`) |
+| `rest` | `ingestion/connectors/rest.py` | dlt's declarative `rest_api_source` |
 
-Every connector exposes the same contract: `extract_source(source,
+Every connector exposes the same contract: `build_resources(source,
 work_dir) -> {prefixed_resource_name: parquet_path}`, one Parquet file per
-table/resource, written in one call. `pipeline.py` dispatches to the right
-connector by `source.family` -- this is what lets task 2's "no code change
-per source" hold across all three families, not just `sql`.
+table/resource, written in one call. `ingestion/connectors/registry.py`
+dispatches to the right connector by `source.family` -- this is what lets
+task 2's "no code change per source" hold across all three families, not
+just `sql`.
 
 ### `sql`
 
@@ -95,8 +101,9 @@ bounded). Mark `network: true` -- its connector test then carries
 | `merge` | Upserts by primary key (pyiceberg `Table.upsert`) | `primary_key` |
 
 `append` duplicates rows on a re-run or a crash-then-resume once a table's
-commit has already landed (verified: `tests/test_ingest_dlt.py`'s
-`test_append_accumulates_on_rerun` and [DLT_EVAL.md](DLT_EVAL.md)'s
+commit has already landed (verified:
+`tests/ingestion/test_engine.py`'s `test_append_accumulates_on_rerun` and
+[DLT_EVAL.md](DLT_EVAL.md)'s
 crash-resume experiment). Pair it with `incremental` and still prefer
 `merge` whenever a stable primary key exists -- `merge` is idempotent
 regardless of how many times the same extracted rows get re-applied, which
@@ -127,7 +134,7 @@ tables that were then **invisible** to `dhd query`/`dhd list-tables`
 SQLite catalog files, one in the `flight_data` Docker named volume, one
 on the host (`ingestion/data/pyiceberg_catalog.db`, confirmed to already
 hold leftover tables from earlier, unrelated sessions). See
-`datahut_duckhouse/ingest_sinks.py`.
+`ingestion/sinks/flight_sink.py`.
 
 `merge` still has no Flight-level equivalent: `HybridBackend` inherits a
 working `upsert()` *method* unmodified from xorq's `PyIcebergBackend`, but
@@ -136,7 +143,7 @@ no Flight action or `UploadMode` reaches it over the wire
 adding one is real scope, see "Next" below, deliberately not done here).
 So `merge` still writes directly via pyiceberg from the client -- but
 **only once proven to be a single writer**:
-`datahut_duckhouse/catalog_guard.py` registers a tiny action at runtime
+`ingestion/sinks/catalog_guard.py` registers a tiny action at runtime
 (xorq's own `add-action`, no `HybridBackend`/xorq change -- same technique
 as `flight_version_guard.py`) that reports the server's resolved catalog
 URI and warehouse path (read straight off the live `HybridBackend`
@@ -148,9 +155,9 @@ second, invisible catalog.
 Schema evolution (`schema_contract: evolve`) under `append`, which used to
 mutate the table's Iceberg schema straight from the client, now needs the
 same thing server-side when the write itself moved there:
-`datahut_duckhouse/schema_evolve_action.py` adds one more dynamically
-registered action, reaching the server's own `.catalog` object (the exact
-one `HybridBackend` already exposes) to call the identical
+`ingestion/sinks/flight_sink.py` adds one more dynamically registered
+action, reaching the server's own `.catalog` object (the exact one
+`HybridBackend` already exposes) to call the identical
 `update_schema().union_by_name(...).commit()` the old direct path used --
 again, no `HybridBackend` change.
 
@@ -178,8 +185,9 @@ incremental:
 ```
 
 Tracks the highest value of `column` seen so far in a small local JSON
-file per `(source, resource)` under `ingestion/dlt/_state/` (gitignored --
-this is a cursor, not data). **Verified caveat**: the lower bound is
+file per `(source, resource)` under `ingestion/_state/` (configurable via
+`DHD_INGEST_STATE_DIR`; gitignored -- this is a cursor, not data).
+**Verified caveat**: the lower bound is
 inclusive (`>=`), so any rows that happen to share the exact cursor value
 already recorded (e.g. a bulk-backfilled column where many rows got the
 same timestamp) are re-extracted on every subsequent run, not skipped --
@@ -217,12 +225,14 @@ connection string, API key, or password.
 
 Every `dhd ingest-dlt` run logs one row per table to a `_ingest_runs`
 Iceberg table (source, table, start, end, duration, rows, status, error) --
-appended through the same connection already open, so it costs no extra
-round trip. If that table can't be prepared or appended to, it falls back
-to a local SQLite file (`ingestion/dlt/_state/ingest_runs.db`) and says so
-on stderr rather than silently dropping the row.
+appended through the Flight server (same single-writer path as the data
+itself), so it costs no extra round trip and stays visible to `dhd query`.
+If that table can't be prepared or appended to, it falls back to a local
+SQLite file (`ingestion/_state/ingest_runs.db`, configurable via
+`DHD_INGEST_RUN_LOG_DB`) and says so on stderr rather than silently
+dropping the row.
 
 Every table write -- whatever its `write_disposition` -- is exactly **one**
 Iceberg commit per run, regardless of how many Parquet chunks a connector
 pulled it in. Verified by counting snapshots across 3 runs
-(`tests/test_ingest_dlt.py::TestOneCommitPerTablePerRun`).
+(`tests/ingestion/test_engine.py::TestOneCommitPerTablePerRun`).

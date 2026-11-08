@@ -1,7 +1,8 @@
 """The ``files`` connector family (Vague 1b, task 2): local CSV/JSON/Parquet,
-optionally fetched over HTTP first (``source.http_url``). Always exactly one
-resource per source (the file itself), named ``source.resources[0]``
-(defaulted to ``source.name`` by the registry's validator if omitted).
+optionally fetched over HTTP first (``source.http_url``). Always exactly
+one resource per source (the file itself), named ``source.resources[0]``
+(defaulted to ``source.name`` by ``ingestion.config.rules`` if omitted).
+Never imports ``dlt`` -- plain pyarrow readers.
 """
 
 from __future__ import annotations
@@ -15,9 +16,11 @@ import pyarrow as pa
 import pyarrow.csv as pacsv
 import pyarrow.json as pajson
 import pyarrow.parquet as papq
-from registry import SourceConfig, SourcesConfigError, prefixed_table_name
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+from ingestion.config.models import SourceConfig, SourcesConfigError
+from ingestion.config.registry import prefixed_table_name
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _CACHE_DIR = Path(__file__).parent.parent / "_cache"
 
 
@@ -77,7 +80,7 @@ def _read(path: Path, fmt: str) -> pa.Table:
     raise SourcesConfigError(f"Unsupported files format: '{fmt}'.")
 
 
-def extract_source(source: SourceConfig, work_dir: Path) -> dict[str, Path]:
+def build_resources(source: SourceConfig, work_dir: Path) -> dict[str, Path]:
     """Read ``source``'s single resource and write it to Parquet under ``work_dir``."""
     path = _resolve_path(source)
     arrow_table = _read(path, source.format or "")
