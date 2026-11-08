@@ -219,6 +219,35 @@ def query(ctx: click.Context, sql: str, limit: int | None, fmt: str) -> None:
     _render(result, fmt)
 
 
+@cli.command("ingest-dlt")
+@click.option(
+    "--source",
+    "source_name",
+    default="all",
+    show_default=True,
+    help="Source name from ingestion/dlt/sources.yml, or 'all'.",
+)
+def ingest_dlt(source_name: str) -> None:
+    """Extract a dlt-configured source (Chinook, etc.) and load it into Iceberg.
+
+    Always uses the pyiceberg engine, independent of --engine/DHD_ENGINE: the
+    default flight engine segfaults on any Schema round-trip against a real
+    server (see README Known gaps). Loads overwrite each table on every run,
+    so re-running this command never duplicates rows.
+    """
+    from datahut_duckhouse.ingest_dlt import IngestDltError, run_ingest_dlt
+
+    try:
+        results = run_ingest_dlt(source_name)
+    except IngestDltError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if not results:
+        click.echo("No tables extracted.")
+        return
+    for table, (verb, n) in sorted(results.items()):
+        click.echo(f"{verb.capitalize()} '{table}' - {n} rows.")
+
+
 @cli.group()
 def branch() -> None:
     """Nessie-style catalog branching - NOT active yet (ADR-0002, roadmap Phase 3)."""
