@@ -3,7 +3,7 @@
 # No secrets here: runtime config comes from the environment (see docker-compose.yml
 # + .devcontainer/.env.example / project .env).
 
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.13
 
 FROM ghcr.io/astral-sh/uv:0.9-python${PYTHON_VERSION}-bookworm-slim AS builder
 

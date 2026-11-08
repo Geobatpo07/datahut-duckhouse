@@ -2,7 +2,7 @@
 # XORQ orchestration API (FastAPI, orchestrator/main.py) — standalone, built with uv.
 # No secrets here: configuration comes from the environment (docker-compose.yml).
 
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.13
 
 FROM ghcr.io/astral-sh/uv:0.9-python${PYTHON_VERSION}-bookworm-slim
 
