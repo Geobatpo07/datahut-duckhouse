@@ -151,6 +151,11 @@ was **not** re-verified in this pass — the Docker daemon wasn't reachable in
 this environment; see step 4 above for what is and isn't expected to work
 there.
 
+The same round trip was also re-run with an `s3://` warehouse against a local
+`moto` S3 mock (`uv run moto_server`, same separate-process setup) — this is
+the specific condition the old `dhd query` segfault (xorq 0.2.4) was reported
+under; it no longer reproduces on xorq 0.4.11.
+
 #### Engines: `--engine flight` (default) vs `--engine pyiceberg`
 
 `dhd --engine pyiceberg <cmd>` (or `DHD_ENGINE=pyiceberg`) skips the Flight
