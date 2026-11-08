@@ -1,0 +1,49 @@
+# Multi-engine ingestion sources for the Chinook benchmark (Vague 1).
+#
+# One entry = one source database. `ingestion/dlt/pipeline.py` reads this
+# file and extracts each source with dlt's `sql_database` source, writing
+# every table prefixed with the source's own `name` (e.g. source `pg_chinook`
+# + table `album` -> `pg_chinook_album`), so all sources can land in the same
+# DataHut namespace without colliding.
+#
+# Fields:
+#   name           - prefix used for every table from this source
+#   dialect        - sqlite | postgresql | mysql | sqlserver
+#   connection_env - name of the environment variable holding the connection
+#                    URL (never the URL itself -- see .devcontainer/.env.example)
+#   schema         - optional; defaults below are the schema each engine's
+#                    Chinook load script actually uses
+#   tables         - explicit list, or [] for "every table in the schema"
+#
+# Add a fourth source by adding one entry here -- the pipeline and
+# `dhd ingest-dlt` need no code change (success criterion, Vague 1 step 1).
+
+sources:
+  - name: sqlite_chinook
+    dialect: sqlite
+    connection_env: CHINOOK_SQLITE_URL
+    schema: null
+    tables: []
+
+  - name: pg_chinook
+    dialect: postgresql
+    connection_env: CHINOOK_POSTGRES_URL
+    schema: public
+    tables: []
+
+  - name: mysql_chinook
+    dialect: mysql
+    connection_env: CHINOOK_MYSQL_URL
+    schema: Chinook
+    tables: []
+
+  # Optional, matches the `mssql` compose profile -- not run or verified in
+  # this pass (see tests/docker/chinook/README.md). Left in sources.yml as
+  # the worked example of "a fourth source is one entry"; `dhd ingest-dlt
+  # --source mssql_chinook` will fail with a clear connection error until the
+  # mssql profile is actually brought up.
+  - name: mssql_chinook
+    dialect: sqlserver
+    connection_env: CHINOOK_MSSQL_URL
+    schema: dbo
+    tables: []
