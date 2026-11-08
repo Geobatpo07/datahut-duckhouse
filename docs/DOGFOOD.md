@@ -187,3 +187,31 @@ claim is made about its row counts, types, or join results.
   into Vague 2+, budget time to actually bring up the `mssql` profile and
   run the same test suite against it before trusting `sources.yml`'s
   `mssql_chinook` entry.
+
+## Vague 1b — ingestion registry dogfooding (2026-11-08)
+
+Full numbers and exact commands: [docs/DLT_EVAL.md](DLT_EVAL.md). Short
+version:
+
+- Incremental+merge against the live Postgres Chinook container: no
+  duplicates across an update+insert, then a delete -- but the delete is
+  never detected (the row stays forever), and the incremental cursor's
+  inclusive lower bound re-extracts any rows sharing the exact same
+  timestamp as the last recorded one (harmless under `merge`, would
+  duplicate under `append`).
+- Schema evolution (`evolve`/`freeze`/`discard_value`) verified against a
+  real widened Postgres table, each mode behaving exactly as
+  `docs/INGESTION.md` describes.
+- Crash-then-resume: killing `dhd ingest-dlt` mid-run (`subprocess.Popen(...).kill()`,
+  a real `TerminateProcess`, not a graceful stop) left a clean partial
+  state -- some tables committed, the rest simply absent, never half-written
+  -- and resuming reached the exact same row counts as an uninterrupted run,
+  for `write_disposition: replace`. **Not** true for `append`, which
+  duplicates on any re-run once a table has already committed -- by
+  design, not a bug.
+- Volume: 1M synthetic rows in 2.3s (339 MiB peak RSS, 1 commit); 10M in
+  7.8s (899 MiB, 1 commit).
+- One real bug found and fixed along the way: an incremental `timestamp`
+  cursor was silently turned into a plain string by its own JSON
+  round-trip, which `dlt.sources.incremental` then rejected on the next
+  run. Regression-tested.

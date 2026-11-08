@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+### Added
+
+- **Ingestion source registry v2, three connector families** (Vague 1b,
+  `feat/vague-1b-registre-dlt`): `ingestion/dlt/sources.yml` is now
+  pydantic-validated (`ingestion/dlt/registry.py`) with
+  family/connector/secret_ref/schedule/resources/incremental/
+  write_disposition/primary_key/schema_contract/target_prefix fields,
+  checked with `dhd sources validate` (every error, with its line and
+  field) and `dhd sources list`. `pipeline.py` dispatches by family to
+  `connectors/{sql,files,rest}.py` instead of hardcoding SQL dialects --
+  adding a source needs no code change in any of them, verified live for
+  all three families. `dhd ingest-dlt` is now the single entry point:
+  `--source NAME`, `--all`, `--dry-run`.
+- Two key-free public REST sources (`jsonplaceholder`, `open_brewery_db`,
+  the latter exercising real pagination) and two local files sources (a
+  pre-existing CSV fixture, a new synthetic `tests/data/sample_products.json`)
+  alongside the four existing sql Chinook sources.
+- **Exploitation layer** (task 3): `write_disposition` (replace/append/
+  merge, merge via pyiceberg's native `Table.upsert`) and `schema_contract`
+  (evolve/freeze/discard_value, verified against real pyiceberg 0.11.1
+  behavior) are now enforced per source, not hardcoded to "always
+  overwrite." A `_ingest_runs` Iceberg table logs one row per table per
+  run (falls back to local SQLite if that table can't be written to).
+  Every table write stays exactly one Iceberg commit per run regardless of
+  write_disposition -- verified by counting snapshots across 3 runs.
+- `scripts/new_source.py <family> <name>` generates a TODO-annotated
+  registry entry plus a skeleton test; one test module per connector
+  family on fixed/local data, a `network` pytest marker (excluded by
+  default, like `integration`) for the two REST sources' live tests.
+- Experiments against real Docker Postgres/MySQL and the real Flight/MinIO
+  stack, written up with exact commands and results in
+  [docs/DLT_EVAL.md](docs/DLT_EVAL.md): incremental+merge (including a live
+  proof that deletions aren't detected, and a real inclusive-cursor-boundary
+  caveat), schema evolution under all three contract modes, crash-then-resume
+  (no duplicates under replace/merge; append is **not** resume-safe, by
+  design), and volume (1M and 10M synthetic rows: 2.3s/339 MiB and 7.8s/899
+  MiB respectively, one commit each). Found and fixed a real bug along the
+  way: an incremental timestamp cursor was being re-read as a plain string
+  after its first JSON round trip, which `dlt.sources.incremental` rejected.
+  See [docs/INGESTION.md](docs/INGESTION.md) for how to add a source.
+
 ### Fixed
 
 - **The `dhd create-table` / `dhd query` segfault is now guarded, not just

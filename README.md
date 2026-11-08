@@ -377,7 +377,8 @@ datahut-duckhouse/
 │   ├── connection.py     # flight engine: connects to the Flight server
 │   ├── flight_version_guard.py  # refuses a Python-minor-version-mismatched server
 │   ├── ingest.py         # pyiceberg engine: talks to Iceberg directly, no xorq
-│   └── ingest_dlt.py     # `dhd ingest-dlt`: loads dlt-extracted sources into Iceberg
+│   ├── ingest_dlt.py     # `dhd ingest-dlt`: loads dlt-extracted sources into Iceberg
+│   └── ingest_run_log.py # one row per table per run, falls back to local SQLite
 ├── flight_server/        # Arrow Flight Server + HybridBackend
 │   └── app/
 │       ├── app_xorq.py
@@ -390,10 +391,13 @@ datahut-duckhouse/
 ├── xorq-admin-dashboard/ # React/Vite admin UI, served by nginx (xorq-admin)
 ├── ingestion/
 │   ├── data/             # Source CSV + local duckhouse.duckdb
-│   └── dlt/              # multi-engine extraction (Vague 1, extra `ingest`)
-│       ├── sources.yml   # one entry per source DB
-│       └── pipeline.py   # reads sources.yml, extracts via dlt to Parquet
+│   └── dlt/              # multi-engine extraction (extra `ingest`)
+│       ├── sources.yml   # the source registry (sql/files/rest, see docs/INGESTION.md)
+│       ├── registry.py   # pydantic schema + validation for sources.yml
+│       ├── pipeline.py   # dispatches to connectors/ by family
+│       └── connectors/   # sql.py, files.py, rest.py -- one extractor each
 ├── scripts/              # Ingestion, queries, tenant management, dbt runner
+│   ├── new_source.py     # generates a sources.yml entry + skeleton test
 │   ├── ingest_flight.py
 │   ├── query_duckdb.py
 │   ├── query_trino.py
@@ -475,8 +479,10 @@ uv run python scripts/demo.py --source pg_chinook
 uv run python scripts/demo.py --source mysql_chinook
 
 # Charger n'importe quelle source dans Iceberg (toujours --engine pyiceberg :
-# chargement serverless en masse, pas de serveur Flight requis) :
-uv run dhd ingest-dlt --source sqlite_chinook   # ou pg_chinook / mysql_chinook / all
+# chargement serverless en masse, pas de serveur Flight requis). Le registre
+# couvre 3 familles (sql/files/rest), voir docs/INGESTION.md :
+uv run dhd sources list
+uv run dhd ingest-dlt --source sqlite_chinook   # ou --all, ou --dry-run
 
 # Tests d'intégration réels (besoin du stack Docker + du fichier SQLite) :
 uv run python scripts/fetch_chinook.py
