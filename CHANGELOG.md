@@ -77,7 +77,13 @@
   against the real `sqlite_chinook` source); `tests/ingestion/test_engine.py`
   gained a crash-then-resume class (a connector that raises mid-extraction,
   simulating a kill before any commit) for `replace` and `merge`. 167
-  tests passing overall.
+  tests passing overall, verified under both Python 3.11 and 3.13 (a
+  throwaway `uv venv --python 3.11`) -- which caught a real bug: several
+  of `test_cli.py`'s "mocked" tests were patching the wrong attribute
+  (`cli_mod.connect`, not `ingestion.cli`'s own captured connection
+  factories) and silently hitting the real Docker Flight server instead,
+  masked under 3.13 because that server happened to be reachable and
+  version-matched. Fixed.
 
 ### `dhd ingest` restructuring (`feat/dhd-ingest`), step A: module layout
 
