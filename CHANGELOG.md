@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### Works today
+
+- Multi-engine ingestion benchmark (Vague 1): `ingestion/dlt/` extracts any
+  configured source (SQLite, PostgreSQL, MySQL — one `sources.yml` entry
+  each) via dlt's `sql_database` source into Parquet; `dhd ingest-dlt
+  --source <name|all>` loads it into Iceberg through the `pyiceberg` engine
+  (overwrite semantics, so a re-run never duplicates rows). `dlt` + DB
+  drivers live in a new optional `ingest` extra (`uv sync --extra ingest`),
+  not the core dependencies.
+- `docker-compose.test.yml` brings up Postgres + MySQL preloaded with the
+  Chinook sample database (pinned to a fixed upstream commit —
+  see `docs/THIRD_PARTY_CHINOOK.md`); `scripts/fetch_chinook.py` downloads
+  the SQLite version on demand, so `scripts/demo.py` needs no Docker.
+- `tests/integration/` (marked `integration`, excluded from the default
+  `pytest` run): verified row-count, type (decimal/timestamp/accented
+  text), and cross-engine join-result consistency across SQLite, Postgres
+  and MySQL loads of the same dataset — 10/10 passing.
+- `scripts/bench_writes.py` + `docs/DOGFOOD.md`: measured, not estimated,
+  Iceberg commit costs for real Chinook tables and a 100k/1M-row synthetic
+  dataset, single write vs. 100 batched commits, local warehouse vs. MinIO.
+- `scripts/demo.py`: one-command demo (SQLite, no Docker) running three
+  illustrative queries (sales by country, top artists, monthly sales)
+  against the ingested data; `--source pg_chinook`/`mysql_chinook` runs the
+  same queries against the Docker sources.
+
+### Known gaps
+
+- SQL Server is scaffolded (`tests/docker/chinook/mssql/`, the `mssql`
+  compose profile) but **not run or verified** — see
+  `tests/docker/chinook/README.md`.
+- Chinook is small (~15k rows across 11 tables): this pass validates
+  correctness and relative per-commit cost, not performance at real
+  (AYITISTATS) scale or under concurrent writers.
+
 ## v0.1.0 — first dogfoodable release
 
 ### Works today

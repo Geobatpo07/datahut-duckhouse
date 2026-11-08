@@ -154,6 +154,26 @@ dogfooding ne teste pas encore le branching).
 récurrente. C'est la preuve que la fondation (Phase 0-3) est solide avant d'y empiler
 du multi-tenant.
 
+### Préparation (2026-11-08) — Vague 1 : banc d'essai multi-moteurs (Chinook, pas AYITISTATS)
+
+Aucune case ci-dessus n'est cochée : AYITISTATS n'a pas encore été migré,
+donc cette phase n'est pas atteinte. Ce qui a été construit et vérifié en
+préparation, avec la base Chinook (petite, neutre, multi-moteurs) plutôt
+qu'un vrai jeu de données :
+
+- Un harnais d'ingestion générique (`ingestion/dlt/`, `dhd ingest-dlt`) qui
+  charge n'importe quelle source SQL déclarée dans `sources.yml` vers
+  Iceberg — vérifié pour de vrai contre SQLite, PostgreSQL et MySQL
+  (`tests/integration/`, 10/10). Ajouter une base = une entrée YAML.
+- Une première réponse, partielle, à la question du coût par écriture
+  posée ci-dessus : mesuré (pas estimé) sur un jeu synthétique 100k/1M
+  lignes et sur les tables Chinook réelles, voir
+  [docs/DOGFOOD.md](DOGFOOD.md). **Pas** au volume réel AYITISTATS, et pas
+  avec des writers concurrents — la question reste ouverte à l'échelle
+  réelle.
+- Aucun ajustement de `HybridBackend`/CLI nécessaire pour ce harnais
+  (il passe par `--engine pyiceberg`, jamais par `HybridBackend`).
+
 ---
 
 ## 🚦 Point de bascule — condition de passage au SaaS

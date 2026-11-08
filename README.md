@@ -307,7 +307,8 @@ datahut-duckhouse/
 ├── datahut_duckhouse/    # `dhd` CLI (the only packaged component)
 │   ├── cli.py            # click commands, --engine flight|pyiceberg
 │   ├── connection.py     # flight engine: connects to the Flight server
-│   └── ingest.py         # pyiceberg engine: talks to Iceberg directly, no xorq
+│   ├── ingest.py         # pyiceberg engine: talks to Iceberg directly, no xorq
+│   └── ingest_dlt.py     # `dhd ingest-dlt`: loads dlt-extracted sources into Iceberg
 ├── flight_server/        # Arrow Flight Server + HybridBackend
 │   └── app/
 │       ├── app_xorq.py
@@ -318,23 +319,36 @@ datahut-duckhouse/
 │       └── backends/hybrid_backend.py
 ├── orchestrator/         # standalone FastAPI orchestration API (xorq-service)
 ├── xorq-admin-dashboard/ # React/Vite admin UI, served by nginx (xorq-admin)
-├── ingestion/data/       # Source CSV + local duckhouse.duckdb
+├── ingestion/
+│   ├── data/             # Source CSV + local duckhouse.duckdb
+│   └── dlt/              # multi-engine extraction (Vague 1, extra `ingest`)
+│       ├── sources.yml   # one entry per source DB
+│       └── pipeline.py   # reads sources.yml, extracts via dlt to Parquet
 ├── scripts/              # Ingestion, queries, tenant management, dbt runner
 │   ├── ingest_flight.py
 │   ├── query_duckdb.py
 │   ├── query_trino.py
 │   ├── setup_iceberg_tables.py
 │   ├── create_tenant.py
-│   └── delete_tenant.py
+│   ├── delete_tenant.py
+│   ├── fetch_chinook.py  # downloads the Chinook SQLite fixture on demand
+│   ├── demo.py           # one-command multi-engine demo (Vague 1)
+│   ├── bench_writes.py   # Iceberg write/commit cost benchmark (Vague 1)
+│   └── smoke_test.py     # Docker round-trip smoke test (CI: integration.yml)
 ├── query_engine/         # unified DuckDB/Trino query-routing prototype
 ├── transform/dbt_project/ # dbt models (config/profiles.yml, target=dev|prod)
 ├── config/               # Trino + tenants config
 │   ├── trino/etc/
 │   └── tenants/tenants.yml
 ├── tests/                # pytest suite (unit + in-process Flight e2e)
+│   ├── integration/      # -m integration: real Postgres/MySQL/SQLite (Vague 1)
+│   └── docker/chinook/   # vendored Chinook load scripts (pinned commit)
 ├── docs/
 │   ├── adr/              # Architecture Decision Records (0001–0005)
-│   └── ROADMAP.md        # phased plan, single source of truth on status
+│   ├── ROADMAP.md        # phased plan, single source of truth on status
+│   ├── DOGFOOD.md        # Vague 1: measured numbers, frictions, open questions
+│   └── THIRD_PARTY_CHINOOK.md  # Chinook dataset license + pinned commit
+├── docker-compose.test.yml  # Postgres/MySQL/(optional SQL Server) Chinook fixtures
 ├── .devcontainer/        # Dockerfiles + devcontainer.json + .env.example
 ├── .env                  # Secrets & config (git-ignored; from .devcontainer/.env.example)
 ├── docker-compose.yml    # Stack definition (root; no secrets)
@@ -356,6 +370,60 @@ uv run dbt test --profiles-dir config --target dev  # a few tests still fail, se
 ```bash
 uv run python scripts/query_duckdb.py
 ```
+
+## 🧪 Banc d'essai multi-moteurs (Vague 1)
+
+Preuve que la même base (Chinook, base de démonstration d'une boutique de
+musique) s'ingère correctement depuis plusieurs moteurs SQL avec
+[dlt](https://dlthub.com/), et mesure du coût des écritures Iceberg. Les
+données AYITISTATS ne sont pas encore branchées — c'est la suite prévue, une
+fois ce harnais vérifié sur un jeu de données neutre.
+
+### Moteurs vérifiés / non vérifiés
+
+| Moteur | Statut |
+|---|---|
+| SQLite | ✅ Vérifié — démo en une commande, aucun Docker requis |
+| PostgreSQL | ✅ Vérifié — `docker-compose.test.yml`, 10/10 tests d'intégration passent |
+| MySQL | ✅ Vérifié — `docker-compose.test.yml`, 10/10 tests d'intégration passent |
+| SQL Server | ⚠️ **Non vérifié** — service scaffoldé derrière le profil compose optionnel `mssql` (image x86_64 uniquement, démarrage plus lourd), jamais démarré ni testé dans cette session. Voir [tests/docker/chinook/README.md](tests/docker/chinook/README.md). |
+
+### Commandes exactes
+
+```bash
+# Dépendances dlt + pilotes (extra optionnel, pas dans les dépendances principales)
+uv sync --extra ingest
+
+# Démo en une commande, SQLite seul, aucun Docker requis
+uv run python scripts/demo.py
+
+# Variante avec Docker (Postgres + MySQL) :
+docker compose -f docker-compose.test.yml up -d
+uv run python scripts/demo.py --source pg_chinook
+uv run python scripts/demo.py --source mysql_chinook
+
+# Charger n'importe quelle source dans Iceberg (toujours --engine pyiceberg,
+# voir Known gaps) :
+uv run dhd ingest-dlt --source sqlite_chinook   # ou pg_chinook / mysql_chinook / all
+
+# Tests d'intégration réels (besoin du stack Docker + du fichier SQLite) :
+uv run python scripts/fetch_chinook.py
+uv run pytest -m integration
+
+# Coût des écritures Iceberg (local puis MinIO) :
+uv run python scripts/bench_writes.py --sizes 100000 1000000 --minio
+```
+
+### Limites
+
+Chinook est **petit** : ~15 000 lignes au total sur 11 tables. Ce banc
+d'essai valide la **justesse** (mêmes lignes, mêmes types, même résultat de
+jointure quel que soit le moteur source) et le **coût relatif par commit**
+(mesuré avec un jeu synthétique de 100k/1M lignes, voir
+[docs/DOGFOOD.md](docs/DOGFOOD.md)) — **pas** la performance à l'échelle
+réelle, pas le comportement multi-writer, et pas SQL Server. Les chiffres
+bruts, les frictions rencontrées, et les questions encore ouvertes sont
+dans [docs/DOGFOOD.md](docs/DOGFOOD.md).
 
 ## 🏢 Multi-tenancy — planned, not provided
 
