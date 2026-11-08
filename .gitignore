@@ -87,6 +87,9 @@ tests/data/Chinook_Sqlite.sqlite
 .dlt/
 ingestion/dlt/_pipeline_data/
 scripts/_bench_work/
+
+# fix/segfault-diagnosis: raw bytes dumped by scripts/repro_segfault.py
+scripts/schema_bytes.pkl
 scripts/_demo_warehouse/
 
 # PyBuilder
