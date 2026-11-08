@@ -68,3 +68,37 @@ class TestSqlConnectorAgainstFixedData:
         # Fixed by the pinned Chinook fixture (docs/THIRD_PARTY_CHINOOK.md) --
         # same count asserted in scripts/bench_writes.py's DOGFOOD numbers.
         assert papq.read_table(written["sqlite_chinook_Artist"]).num_rows == 275
+
+
+class TestIncrementalCursorStatePersistence:
+    """Regression test for a bug found live in task 5's incremental
+    experiment (docs/DLT_EVAL.md): a timestamp cursor stored via
+    ``_state.write_last_value`` round-trips through JSON as a plain string,
+    which ``dlt.sources.incremental`` then rejected against a
+    ``timestamp[us, tz=UTC]`` column ("Could not coerce start_value" --
+    object of type str). ``_decode_cursor`` fixes this by parsing it back
+    before reuse."""
+
+    def test_timestamp_cursor_survives_a_second_run(
+        self, pipeline, tmp_path, monkeypatch
+    ):
+        from connectors import _state
+
+        monkeypatch.setattr(_state, "STATE_DIR", tmp_path / "_state")
+
+        source = pipeline.SourceConfig(
+            name="incremental_test",
+            family="sql",
+            connector="sql_database",
+            secret_ref="CHINOOK_SQLITE_URL",
+            dialect="sqlite",
+            resources=["Employee"],
+            incremental={"column": "HireDate", "type": "timestamp"},
+        )
+        # Run 1: populates the state file with a real datetime, JSON-encoded.
+        run1 = pipeline.extract_source(source, work_dir=tmp_path / "out1")
+        assert "incremental_test_Employee" in run1
+        # Run 2 must not raise -- this is exactly where the bug surfaced (a
+        # plain str initial_value rejected against a timestamp column).
+        # Nothing changed since run 1, so an empty result here is correct.
+        pipeline.extract_source(source, work_dir=tmp_path / "out2")

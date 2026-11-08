@@ -6,6 +6,7 @@ stdlib, ``psycopg2``, ``pymysql``, ``pymssql``). Carried over from Vague 1's
 
 from __future__ import annotations
 
+import datetime
 from importlib.util import find_spec
 from pathlib import Path
 
@@ -27,6 +28,20 @@ _DRIVER_PACKAGE: dict[str, str | None] = {
 
 class MissingDriverError(RuntimeError):
     """The SQL driver package for a source's dialect is not installed."""
+
+
+def _decode_cursor(value, cursor_type: str):
+    """Undo JSON's stringification of a stored cursor value (``_state``
+    round-trips everything through ``json.dumps(..., default=str)``) so it
+    matches the pyarrow column's actual Python type -- otherwise dlt's
+    ``incremental`` rejects a str ``initial_value`` against a timestamp
+    column. Verified against the live Postgres Chinook container (task 5,
+    experiment 1): a plain ``str`` initial_value against a ``timestamp[us,
+    tz=UTC]`` column fails with ``Could not coerce start_value/initial_value``.
+    """
+    if value is not None and cursor_type == "timestamp" and isinstance(value, str):
+        return datetime.datetime.fromisoformat(value)
+    return value
 
 
 def check_driver(dialect: str) -> None:
@@ -63,7 +78,9 @@ def extract_source(source: SourceConfig, work_dir: Path) -> dict[str, Path]:
         import dlt
 
         for resource in db_source.resources.values():
-            last_value = _state.read_last_value(source.name, resource.name)
+            last_value = _decode_cursor(
+                _state.read_last_value(source.name, resource.name), inc.type
+            )
             resource.apply_hints(
                 incremental=dlt.sources.incremental(
                     inc.column, initial_value=last_value
@@ -80,7 +97,9 @@ def extract_source(source: SourceConfig, work_dir: Path) -> dict[str, Path]:
 
         if inc is not None and inc.column in arrow_table.column_names:
             seen_max = pc.max(arrow_table.column(inc.column)).as_py()
-            previous = _state.read_last_value(source.name, table_name)
+            previous = _decode_cursor(
+                _state.read_last_value(source.name, table_name), inc.type
+            )
             new_max = seen_max if previous is None else max(previous, seen_max)
             _state.write_last_value(source.name, table_name, new_max)
 
