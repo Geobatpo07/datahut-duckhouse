@@ -116,9 +116,19 @@ directement et a donné des résultats reproductibles.
 ## 4. Volume
 
 Table synthétique (`id: int64`, `name: string`, `amount: float64`, `flag:
-bool`), écrite via le connecteur `files` (Parquet local) puis chargée en
-un seul commit (`write_disposition: replace`), mémoire pic mesurée par
+bool`), écrite une fois en Parquet local, mémoire pic mesurée par
 échantillonnage `psutil` (RSS, toutes les 50ms) pendant toute la durée.
+
+**Précision sur ce qui est mesuré** (demandée en relecture) : pour une
+source `files`, "extraction" (`connectors/files.py::extract_source`)
+signifie lire le fichier Parquet local **entièrement en mémoire**
+(`pyarrow.parquet.read_table`) puis le ré-écrire tel quel dans le
+répertoire de travail -- ce n'est **pas** une extraction réseau/SGBD en
+flux (celle-ci streamerait des lots depuis un curseur). Puis "chargement"
+relit **à nouveau tout le fichier en mémoire** (`papq.read_table`) avant
+un unique appel `iceberg_table.append()`. Le premier scénario ci-dessous
+matérialise donc les 10M lignes en mémoire deux fois de suite avant de
+toucher Iceberg -- ce que confirme son pic RSS.
 
 | Lignes | Extraction | Chargement (1 commit) | Total | RSS pic | Commits |
 |---|---|---|---|---|---|
@@ -130,6 +140,28 @@ car le temps le permettait largement). Comportement sous-linéaire mais
 proche du linéaire entre 1M et 10M (x10 lignes -> x3.3 temps, x2.65
 mémoire) -- cohérent avec un coût dominé par la lecture/écriture Parquet
 et la construction du buffer Arrow, pas par du travail quadratique.
+
+### Même volume, par tranches (chunks), 10M lignes
+
+Pour mesurer l'effet du chargement par lots plutôt qu'en mémoire entière :
+lecture du même fichier Parquet (10M lignes, `row_group_size=500000`) via
+`pyarrow.parquet.ParquetFile.iter_batches(batch_size=500_000)` -- un vrai
+flux, jamais plus d'un lot en mémoire à la fois -- et un `append` Iceberg
+**par lot** (donc plusieurs commits, volontairement, pour cette seule
+mesure -- ce n'est pas le comportement de `dhd ingest-dlt` en production,
+qui garde un commit par table et par run, voir tâche 3).
+
+| Lignes | Lots | Total | RSS pic | Commits |
+|---|---|---|---|---|
+| 10 000 000 | 20 (500 000/lot) | 11.446s | **362.2 MiB** | 20 |
+
+**Comparaison directe (10M lignes) :** 899.3 MiB (1 commit, tout en
+mémoire) contre 362.2 MiB (20 commits, par tranches) -- **-60% de pic
+mémoire**, au prix de 20 commits au lieu d'1 et d'un temps total légèrement
+plus long (11.4s contre 7.8s, overhead de 19 commits supplémentaires).
+Compromis mémoire/commits réel, pas gratuit dans les deux sens -- à choisir
+selon la contrainte qui compte le plus pour une source donnée (mémoire
+disponible vs coût par commit Iceberg).
 
 ## 5. (Optionnel) Écriture directe vs via Flight
 
@@ -152,23 +184,27 @@ donc cette inversion est probablement du bruit (variance de démarrage
 `uv run`, état du cache disque), pas un signal fiable. La contrainte de
 writer unique de `HybridBackend` (déjà documentée, ADR-0001) n'a pas été
 ré-explorée ici -- `HybridBackend` n'a pas été modifié, conformément à la
-consigne.
+consigne. **Mise à jour en relecture** : qui écrit réellement dans Iceberg
+pour `dhd ingest-dlt` (toujours le processus client, jamais ce même
+serveur Flight, pour les 3 `write_disposition`) est maintenant détaillé
+dans [docs/INGESTION.md](INGESTION.md#who-actually-writes-to-iceberg-single-writer-adr-0001),
+avec la vérification concrète (catalogues SQLite physiquement séparés
+aujourd'hui -- fragmentation, pas concurrence) et une alternative proposée
+(non implémentée).
 
-**Ce test a laissé une table `synthetic_100k_flight` dans l'entrepôt
-MinIO partagé du conteneur** (comme d'autres tables de vérification
-laissées par les sessions précédentes : `matrix_test_311`, `segfault_probe`,
-etc.) -- `dhd` n'a pas de commande `drop-table`, donc je ne l'ai pas
-supprimée moi-même plutôt que de bricoler un accès catalogue hors `dhd`.
+**`dhd drop-table <nom>` existe maintenant** (ajouté en relecture) et a
+servi à supprimer la table `synthetic_100k_flight` que ce test avait
+laissée dans l'entrepôt MinIO partagé du conteneur.
 
 ## Non vérifié
 
 - SQL Server (`mssql_chinook`) : toujours scaffolded, jamais lancé (voir
   `tests/docker/chinook/README.md`, inchangé depuis Vague 1).
-- Les 2 sources REST (`jsonplaceholder`, `open_brewery_db`) sont vérifiées
-  en extraction seule (`-m network`, voir tests/test_connectors_rest.py) ;
-  elles n'ont pas été chargées dans Iceberg via `dhd ingest-dlt` dans le
-  cadre de cette évaluation (seulement validées à la main une fois, voir
-  les commits de la tâche 2).
+- ~~Les 2 sources REST ... chargées dans Iceberg via `dhd ingest-dlt`~~ --
+  fait en relecture (point 3) : `dhd --engine pyiceberg ingest-dlt --source
+  jsonplaceholder`/`open_brewery_db` vérifiés en live (10/100/200 lignes
+  chargées, re-run sans doublon), avec test d'intégration dédié
+  (`tests/test_connectors_rest.py::TestRestSourcesActuallyLoadIntoIceberg`).
 - L'expérience 5 n'a qu'un échantillon par scénario -- pas de confiance
   statistique, voir ci-dessus.
 - Volume au-delà de 10M lignes.
@@ -182,9 +218,20 @@ supprimée moi-même plutôt que de bricoler un accès catalogue hors `dhd`.
 **dlt seul, avec la garde ajoutée ici (registre + contrats de schéma +
 merge idempotent), convient pour ce volume et ce nombre de sources.** Pas
 besoin d'un autre outil : le report inclusif de l'incrémental n'est
-dangereux qu'avec `append` -- la règle simple "primary key connue =>
-`merge`" l'élimine. La seule vraie lacune structurelle est l'absence de
-détection des suppressions, intrinsèque à toute extraction par curseur
-(dlt ou autre) sans CDC côté source -- hors de portée de ce brief
-("ne pas implémenter les instances clients", et CDC serait une tâche à
-part entière).
+dangereux qu'avec `append`, et c'est désormais rejeté à la validation --
+la règle qui reste est "primary key connue => `merge`". La seule vraie
+lacune structurelle est l'absence de détection des suppressions,
+intrinsèque à toute extraction par curseur (dlt ou autre) sans CDC côté
+source -- hors de portée de ce brief ("ne pas implémenter les instances
+clients", et CDC serait une tâche à part entière).
+
+**Second point structurel, non résolu ici** (voir "Qui écrit réellement
+dans Iceberg" ci-dessus et dans docs/INGESTION.md) : `dhd ingest-dlt`
+écrit directement via pyiceberg, jamais via le serveur Flight -- ce qui
+évite aujourd'hui une vraie collision d'écriture concurrente seulement
+parce que les deux catalogues sont des fichiers SQLite physiquement
+différents (fragmentation du catalogue, pas concurrence). Ça tient tant
+que `ICEBERG_CATALOG_URI` n'est pas partagé entre les deux chemins ; le
+jour où il le sera, cette architecture aura besoin d'un vrai arbitrage
+(writer unique réel, probablement en repassant par Flight) avant d'être
+utilisée à plusieurs processus en même temps.

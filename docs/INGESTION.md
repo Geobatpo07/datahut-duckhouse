@@ -101,7 +101,63 @@ crash-resume experiment). Pair it with `incremental` and still prefer
 `merge` whenever a stable primary key exists -- `merge` is idempotent
 regardless of how many times the same extracted rows get re-applied, which
 is what makes `incremental`'s inclusive cursor boundary (see below) safe
-in practice.
+in practice. **`incremental` + `append` is rejected at validation time**
+(no dedup key exists for `append` to fall back on); **`incremental` +
+`replace` only warns**, because it silently drops every unchanged row
+instead of duplicating anything -- a different failure mode, not
+inherently wrong if a source genuinely re-pulls its whole window at once.
+
+## Who actually writes to Iceberg (single writer, ADR-0001)
+
+For all three `write_disposition` values alike -- `merge` is not special
+here -- **the writer is the client process running `dhd ingest-dlt`**
+(`datahut_duckhouse.ingest.PyIcebergEngine`, talking to pyiceberg
+directly), never the Flight server/`HybridBackend`. `create_table` and
+`upload_table(mode=append|overwrite|merge)` all go through this exact same
+path.
+
+**Verified (2026-11-08), in this project's default configuration, this is
+not literal concurrent-writer corruption, but it is catalog
+fragmentation**, which is arguably worse day-to-day:
+
+- The Flight server's catalog lives in a named Docker volume
+  (`flight_data`, confirmed via `docker volume inspect
+  datahut-duckhouse_flight_data` -- `Driver: local`, mounted at Docker's
+  own internal storage, never bind-mounted to the host).
+- `dhd ingest-dlt` run from the host falls back to
+  `ingestion/data/pyiceberg_catalog.db` **on the host** (`_local_meta_dir()`
+  in `ingest.py`) -- confirmed by opening that file directly: it already
+  held leftover tables from earlier, unrelated sessions (`sqlite_chinook_*`,
+  `smoke_*`), proving it is a real, silently-accumulating, long-lived
+  fallback location, not a throwaway temp file.
+- These are two **physically different SQLite files**. A table loaded by
+  `dhd ingest-dlt` is invisible to `dhd query`/`dhd list-tables --engine
+  flight` and vice versa, even though both may write into the *same*
+  underlying S3/MinIO bucket (`ICEBERG_WAREHOUSE` is shared via `.env`) --
+  the data files can coexist on S3 while neither catalog knows the other
+  table exists.
+- **If `ICEBERG_CATALOG_URI` is ever pointed at one shared catalog for
+  both** (e.g. a future Postgres-backed catalog -- Nessie is a separate,
+  larger change, ADR-0002), the risk flips: the Flight server and every
+  concurrent `dhd ingest-dlt` run become genuine concurrent writers to the
+  *same* catalog, which is exactly the "single writer" assumption
+  ADR-0001 flagged as an explicit interim limitation of a SQL(ite) catalog
+  -- and which neither pyiceberg nor this project arbitrates today.
+
+**Proposed alternative, not implemented without explicit approval**:
+route `dhd ingest-dlt`'s writes through the Flight server instead of
+pyiceberg-direct (the same Flight action `dhd create-table`/`insert`
+already use). This is a real design change, not a one-line fix:
+`write_disposition: merge` has no equivalent in `HybridBackend` today
+(only `append`/`overwrite`, per ADR-0001) and would need one added
+server-side; it reintroduces the client/server Python-minor-version
+dependency (`flight_version_guard.py`, `chore/python-matrix`) for a path
+that was deliberately built to need no Flight server at all
+(`ingest_dlt.py`'s own docstring); and it would mean rewriting
+`ingest_dlt.py`'s "always uses the pyiceberg engine... no Flight server
+needed" claim throughout the docs. A single real writer would resolve
+*both* the fragmentation and the concurrency risk at once -- but is a
+decision for whoever owns this trade-off, not something to default into.
 
 ## Incremental extraction
 

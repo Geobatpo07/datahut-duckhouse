@@ -43,6 +43,34 @@
   after its first JSON round trip, which `dlt.sources.incremental` rejected.
   See [docs/INGESTION.md](docs/INGESTION.md) for how to add a source.
 
+### Follow-up review (same branch)
+
+- `incremental` + `write_disposition: append` is now rejected at
+  validation time (no dedup key for `append` to fall back on);
+  `incremental` + `replace` warns instead (silent data loss, not
+  duplication) -- `dhd sources validate` now prints `WARN:` lines.
+- Documented, with concrete verification, **who actually writes to
+  Iceberg** for `dhd ingest-dlt`: always the client process via pyiceberg,
+  never the Flight server, for all three `write_disposition` values alike.
+  In this project's default config that's catalog *fragmentation* (two
+  physically separate SQLite catalog files, confirmed), not literal
+  concurrent-writer corruption -- but would become real writer concurrency
+  if `ICEBERG_CATALOG_URI` is ever shared between the two paths. An
+  alternative (routing `dhd ingest-dlt` through Flight) is proposed, not
+  implemented -- see [docs/INGESTION.md](docs/INGESTION.md).
+- Verified the two REST sources actually load into Iceberg via `dhd
+  ingest-dlt` (not just extraction) -- added a dedicated integration test.
+- Clarified exactly what the 1M/10M volume numbers measured (a files
+  source materializes the whole file in memory twice -- once per
+  extract, once per load -- not a streaming extraction), and added a
+  chunked-batches measurement for comparison: 10M rows via 20×500k-row
+  batches, one commit each, peak RSS 362 MiB vs. 899 MiB for the single
+  big load (-60%, at the cost of 20 commits instead of 1).
+- Added `dhd drop-table <name>` (confirms unless `--yes`; works against
+  both engines, the flight engine via xorq's existing, unmodified
+  `drop_table` Flight action) and used it to remove `synthetic_100k_flight`,
+  the table the optional experiment 5 had left in the shared dev warehouse.
+
 ### Fixed
 
 - **The `dhd create-table` / `dhd query` segfault is now guarded, not just
