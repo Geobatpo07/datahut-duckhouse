@@ -275,6 +275,31 @@ separate from a running Flight server's catalog — fine for the single-user mod
 does not read `.env` itself, so pass `ICEBERG_*` / `S3_*` / `AWS_*` in the
 environment.
 
+## 🪟 Commandes sans make
+
+`make` n'est pas installé sur cette machine (Windows, Git Bash sans `make` sur
+le `PATH`). Les commandes ci-dessous sont les équivalents exacts de chaque
+cible utile du `Makefile`, vérifiés sur cette machine ; elles sont toutes de
+simples alias `uv run …` / `docker compose …` que `make` appelle déjà, donc
+aucune n'a demandé de nouvel outil de tâches.
+
+| Cible `make`  | Équivalent vérifié |
+|---------------|---------------------|
+| `make sync`   | `uv sync --frozen` |
+| `make test`   | `uv run pytest --cov=flight_server --cov=scripts --cov=datahut_duckhouse --cov-report=term-missing` |
+| `make lint`   | `uv run ruff check .` puis `uv run black --check .` puis `uv run mypy flight_server scripts datahut_duckhouse` |
+| `make format` | `uv run ruff check . --fix` puis `uv run black .` |
+| `make docker-up` | `docker compose up -d` (après `cp .devcontainer/.env.example .env` si `.env` n'existe pas encore — c'est ce que fait la dépendance `env` de cette cible) |
+| `make docker-down` | `docker compose down` |
+| `make docker-logs` | `docker compose logs -f` |
+
+Toutes les autres cibles du `Makefile` (`docker-build`, `docker-restart`,
+`create-tenant`, `dbt-run-dev`, `query-trino-list`, etc.) sont aussi de
+simples alias `$(UV) run …` / `$(COMPOSE) …` — il suffit de lire la ligne
+correspondante dans le [`Makefile`](Makefile) et de lancer la commande qu'elle
+appelle directement ; aucune n'a d'équivalent qui ne soit pas déjà un simple
+alias.
+
 ## 📂 Project Structure
 
 ```
