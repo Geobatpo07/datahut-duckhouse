@@ -1,0 +1,76 @@
+# Test-only sources for the Vague 1 multi-engine ingestion benchmark (dlt +
+# Chinook). Separate from docker-compose.yml on purpose: these are disposable
+# fixtures for `ingestion/dlt/` and `tests/integration/`, not part of the
+# DataHut-DuckHouse stack itself.
+#
+# Credentials below are throwaway, local-only test fixtures (no real data,
+# not reachable from outside this compose network) -- not the kind of secret
+# docker-compose.yml's `.env` indirection exists to protect. Chinook data and
+# load scripts: see tests/docker/chinook/README.md (pinned commit + license).
+#
+#   docker compose -f docker-compose.test.yml up -d           # postgres + mysql
+#   docker compose -f docker-compose.test.yml --profile mssql up -d  # + SQL Server (not verified, see README)
+#   docker compose -f docker-compose.test.yml down -v
+
+name: datahut-duckhouse-chinook-test
+
+services:
+  chinook-postgres:
+    image: postgres:16-alpine
+    container_name: chinook-postgres
+    environment:
+      POSTGRES_USER: chinook
+      POSTGRES_PASSWORD: chinook
+      # Deliberately not "chinook": Chinook_PostgreSql.sql creates and \c's
+      # into its own "chinook" database itself (see tests/docker/chinook/README.md).
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./tests/docker/chinook/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chinook -d chinook"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - chinook-test-net
+
+  chinook-mysql:
+    image: mysql:8.4
+    container_name: chinook-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: chinook
+      MYSQL_USER: chinook
+      MYSQL_PASSWORD: chinook
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./tests/docker/chinook/mysql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -pchinook"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - chinook-test-net
+
+  # Optional, disabled by default (`--profile mssql`). Not run or verified in
+  # this pass -- see tests/docker/chinook/README.md: the base image is
+  # x86_64-only (no ARM64 build) and noticeably heavier than Postgres/MySQL.
+  chinook-mssql:
+    build:
+      context: ./tests/docker/chinook/mssql
+      dockerfile: mssql.Dockerfile
+    container_name: chinook-mssql
+    profiles: ["mssql"]
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "ChinookTest!2026"
+    ports:
+      - "1433:1433"
+    networks:
+      - chinook-test-net
+
+networks:
+  chinook-test-net:
