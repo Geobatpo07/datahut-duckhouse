@@ -23,6 +23,7 @@ import pytest
 from click.testing import CliRunner
 
 import ingestion
+import ingestion.cli
 from datahut_duckhouse import cli as cli_mod
 
 
@@ -44,6 +45,18 @@ def _fake_source(**overrides):
 
 
 class TestOptionsAndExitCodes:
+    @pytest.fixture(autouse=True)
+    def _default_connectors(self, monkeypatch):
+        """``ingestion/cli.py`` captures its connection factories once, via
+        ``configure()``, called by ``datahut_duckhouse.cli`` at import
+        time -- patching ``cli_mod.connect`` afterwards does *not* reach
+        that captured reference. Patch ``ingestion.cli``'s own globals
+        directly instead, so these tests never depend on a reachable (and
+        Python-version-matched) real Flight server. Individual tests
+        override one or both further."""
+        monkeypatch.setattr(ingestion.cli, "_connect_flight", lambda: object())
+        monkeypatch.setattr(ingestion.cli, "_connect_pyiceberg", lambda: object())
+
     def test_run_needs_either_source_or_all(self, runner):
         r = runner.invoke(cli_mod.cli, ["ingest", "run"])
         assert r.exit_code != 0
@@ -69,11 +82,6 @@ class TestOptionsAndExitCodes:
             secret_ref="X_URL",
         )
         monkeypatch.setattr(ingestion, "list_sources", lambda: [source])
-
-        def _boom_connect(*a, **kw):
-            raise AssertionError("should not connect for a config error")
-
-        monkeypatch.setattr(cli_mod, "connect", _boom_connect)
         monkeypatch.setattr(
             ingestion,
             "run_source",
@@ -88,7 +96,6 @@ class TestOptionsAndExitCodes:
     def test_run_success_reports_each_table(self, runner, monkeypatch):
         source = _fake_source()
         monkeypatch.setattr(ingestion, "list_sources", lambda: [source])
-        monkeypatch.setattr(cli_mod, "connect", lambda: object())
         result = ingestion.RunResult(
             source="s",
             tables=[ingestion.TableResult(table="s_t", verb="created", rows=3)],
@@ -103,7 +110,6 @@ class TestOptionsAndExitCodes:
     ):
         sources = [_fake_source(name="a"), _fake_source(name="b")]
         monkeypatch.setattr(ingestion, "list_sources", lambda: sources)
-        monkeypatch.setattr(cli_mod, "connect", lambda: object())
 
         def _run_source(name, **kw):
             if name == "a":
@@ -123,7 +129,6 @@ class TestOptionsAndExitCodes:
     def test_fail_fast_stops_at_the_first_failure(self, runner, monkeypatch):
         sources = [_fake_source(name="a"), _fake_source(name="b")]
         monkeypatch.setattr(ingestion, "list_sources", lambda: sources)
-        monkeypatch.setattr(cli_mod, "connect", lambda: object())
         calls: list[str] = []
 
         def _run_source(name, **kw):
@@ -143,7 +148,6 @@ class TestOptionsAndExitCodes:
             ),
         ]
         monkeypatch.setattr(ingestion, "list_sources", lambda: sources)
-        monkeypatch.setattr(cli_mod, "connect", lambda: object())
         calls: list[str] = []
 
         def _run_source(name, **kw):
@@ -169,7 +173,6 @@ class TestOptionsAndExitCodes:
             secret_ref="FAKE_SECRET_URL",
         )
         monkeypatch.setattr(ingestion, "list_sources", lambda: [source])
-        monkeypatch.setattr(cli_mod, "connect", lambda: object())
 
         def _run_source(name, **kw):
             try:
@@ -192,7 +195,7 @@ class TestOptionsAndExitCodes:
         def _boom_connect():
             raise AssertionError("dry-run must not connect to Flight")
 
-        monkeypatch.setattr(cli_mod, "connect", _boom_connect)
+        monkeypatch.setattr(ingestion.cli, "_connect_flight", _boom_connect)
         result = ingestion.RunResult(
             source="s",
             tables=[ingestion.TableResult(table="s_t", verb="planned", rows=5)],
@@ -215,11 +218,15 @@ class TestOptionsAndExitCodes:
         # datahut_duckhouse.ingest_dlt does `from ingestion import
         # list_sources, run_source` -- its own bindings, independent of
         # `ingestion.list_sources`/`.run_source` once imported. Patch its
-        # own module's names directly, not the ingestion package's.
+        # own module's names directly, not the ingestion package's. It
+        # also re-imports `datahut_duckhouse.connection.connect` fresh on
+        # every call (not `cli_mod.connect`), so patch that module's own
+        # attribute too, rather than relying on a real reachable server.
+        import datahut_duckhouse.connection as connection_mod
         import datahut_duckhouse.ingest_dlt as ingest_dlt_mod
 
+        monkeypatch.setattr(connection_mod, "connect", lambda: object())
         monkeypatch.setattr(ingest_dlt_mod, "list_sources", lambda: [_fake_source()])
-        monkeypatch.setattr(cli_mod, "connect", lambda: object())
         result = ingestion.RunResult(
             source="s",
             tables=[ingestion.TableResult(table="s_t", verb="created", rows=1)],
