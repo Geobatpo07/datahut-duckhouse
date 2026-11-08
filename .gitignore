@@ -86,6 +86,7 @@ tests/data/Chinook_Sqlite.sqlite
 # dlt's own state/working dirs (pipeline run metadata, staged parquet)
 .dlt/
 ingestion/dlt/_pipeline_data/
+scripts/_bench_work/
 
 # PyBuilder
 .pybuilder/
