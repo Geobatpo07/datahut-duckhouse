@@ -19,7 +19,9 @@ dependencies = [
     # which needs this — upstream declares it only under optional extras
     # (bigquery/databricks), not as a core dependency.
     "adbc-driver-manager>=1.0.0",
-    "psycopg>=3.1",
+    # [binary] bundles libpq so the import works on slim/minimal Linux images
+    # (plain psycopg needs a system libpq, which the Docker runtime images don't ship).
+    "psycopg[binary]>=3.1",
     "pyiceberg[sql-sqlite]>=0.9.0",
     "dbt-core>=1.9.0",
     "dbt-duckdb>=1.9.2",
