@@ -207,15 +207,32 @@ uv run dbt test --profiles-dir config --target dev  # a few tests still fail, se
 uv run python scripts/query_duckdb.py
 ```
 
-## 🔒 Delete a Tenant
+## 🏢 Multi-tenancy — planned, not provided
+
+**Positioning:** DataHut-DuckHouse is a lightweight analytics engine meant to be
+deployed per client, not a multi-tenant SaaS. Today, each deployment serves one
+tenant.
+
+Real multi-tenancy (isolated namespaces, per-tenant auth, quotas, billing) is
+**planned** work, sequenced as roadmap [Phases 6–9](docs/ROADMAP.md) and specified
+in [ADR-0003](docs/adr/0003-tenant-metadata-postgres.md),
+[ADR-0004](docs/adr/0004-tenant-isolation-model.md) and
+[ADR-0005](docs/adr/0005-authentication-authorization.md) — it is not implemented
+yet. Concretely, as of this writing:
+
+- Tenants are declared in [`config/tenants/tenants.yml`](config/tenants/tenants.yml),
+  a static list with no enforcement behind it.
+- `scripts/create_tenant.py` / `scripts/delete_tenant.py` drive an in-memory
+  `XORQOrchestrator` (`xorq/core.py`) — state does not survive a restart,
+  and there is no persistence (that's ADR-0003/Phase 4).
+- `dhd` and `HybridBackend` have no tenant concept at all — every table lives in
+  one shared namespace.
+- The Flight server has **no authentication**: anyone who can reach the port can
+  read and write every table.
 
 ```bash
 uv run python scripts/delete_tenant.py --id tenant_acme
 ```
-
-`create_tenant.py`/`delete_tenant.py` exist as standalone scripts, but there is no
-tenant concept in `dhd` or `HybridBackend` yet — multi-tenancy is deliberately
-deferred (see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## 📈 BI Interface with Trino
 
