@@ -307,13 +307,16 @@ def sources_validate() -> None:
     from datahut_duckhouse.ingest_dlt import _load_pipeline
 
     pipeline = _load_pipeline()
+    warnings: list[str] = []
     try:
-        configs = pipeline.load_sources()
+        configs = pipeline.load_sources(collect_warnings=warnings)
     except pipeline.SourcesConfigError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(f"OK: {len(configs)} source(s) valid.")
     for config in configs:
         click.echo(f"  - {config.name} ({config.family}/{config.connector})")
+    for warning in warnings:
+        click.echo(f"WARN: {warning}", err=True)
 
 
 @sources.command("list")

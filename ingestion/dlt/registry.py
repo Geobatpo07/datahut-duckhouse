@@ -14,6 +14,7 @@ Line numbers in error messages come from re-walking the YAML's parse tree
 from __future__ import annotations
 
 import os
+import warnings
 from pathlib import Path
 from typing import Literal
 
@@ -107,6 +108,39 @@ class SourceConfig(BaseModel):
             raise ValueError(
                 f"'{self.name}': write_disposition 'merge' needs 'primary_key'."
             )
+        if self.incremental is not None and self.write_disposition == "append":
+            # Verified live (docs/DLT_EVAL.md, experiment 1): the incremental
+            # cursor's lower bound is inclusive, so any row sharing the exact
+            # cursor value already recorded gets re-extracted on every
+            # subsequent run, not skipped. Under 'merge' that's a harmless
+            # no-op upsert; under 'append' (which has no dedup key at all)
+            # it's a guaranteed duplicate on every single re-run, not just
+            # after a crash. There is no explicit-dedup escape hatch for
+            # 'append' in this schema, so this is always rejected, not just
+            # warned about.
+            raise ValueError(
+                f"'{self.name}': incremental + write_disposition 'append' "
+                f"duplicates rows on every re-run (the cursor's inclusive "
+                f"lower bound re-extracts rows already committed, and "
+                f"'append' has no primary key to deduplicate them against). "
+                f"Use write_disposition 'merge' with a primary_key instead."
+            )
+        if self.incremental is not None and self.write_disposition == "replace":
+            # Not rejected (no duplicate risk), but still a real correctness
+            # trap: 'replace' overwrites the *entire* table with only the
+            # newly-extracted incremental subset, discarding every row from
+            # earlier runs that didn't change this time -- silent data loss,
+            # not duplication. Warn rather than block: a source genuinely
+            # re-pulling its whole incremental window at once (rare) might
+            # intend exactly this.
+            warnings.warn(
+                f"'{self.name}': incremental + write_disposition 'replace' "
+                f"overwrites the whole table with just this run's "
+                f"incrementally-extracted subset every time -- likely "
+                f"silent data loss for rows unchanged since the last run. "
+                f"Use 'merge' with a primary_key unless this is intentional.",
+                stacklevel=2,
+            )
         if self.family == "sql":
             if not self.dialect:
                 raise ValueError(f"'{self.name}': family 'sql' needs 'dialect'.")
@@ -166,12 +200,21 @@ def _entries_with_lines(text: str) -> list[tuple[int, dict]]:
         loader.dispose()
 
 
-def load_sources(path: Path = SOURCES_YML) -> list[SourceConfig]:
+def load_sources(
+    path: Path = SOURCES_YML, collect_warnings: list[str] | None = None
+) -> list[SourceConfig]:
     """Parse and validate every entry in ``sources.yml``.
 
     Raises :class:`SourcesConfigError` with one readable ``line N: field
     'x': message`` line per problem -- all of them, not just the first, so
     ``dhd sources validate`` can report everything wrong in one pass.
+
+    Non-fatal problems (e.g. incremental + write_disposition 'replace', see
+    ``_check_family_fields``) are raised as :class:`UserWarning` instead of
+    an error. Pass ``collect_warnings`` (an empty list) to capture them as
+    ``"line N: message"`` strings instead of letting them print to stderr
+    via Python's normal warning machinery -- this is what ``dhd sources
+    validate`` does, so they show up next to the entry they came from.
     """
     try:
         text = path.read_text()
@@ -187,13 +230,21 @@ def load_sources(path: Path = SOURCES_YML) -> list[SourceConfig]:
         if not isinstance(raw, dict):
             errors.append(f"line {line}: entry is not a mapping: {raw!r}")
             continue
-        try:
-            config = SourceConfig.model_validate(raw)
-        except ValidationError as exc:
-            for err in exc.errors():
-                field = ".".join(str(part) for part in err["loc"]) or "<entry>"
-                errors.append(f"line {line}: field '{field}': {err['msg']}")
-            continue
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            try:
+                config = SourceConfig.model_validate(raw)
+            except ValidationError as exc:
+                for err in exc.errors():
+                    field = ".".join(str(part) for part in err["loc"]) or "<entry>"
+                    errors.append(f"line {line}: field '{field}': {err['msg']}")
+                continue
+        for caught_warning in caught:
+            message = f"line {line}: {caught_warning.message}"
+            if collect_warnings is not None:
+                collect_warnings.append(message)
+            else:
+                warnings.warn(message, caught_warning.category, stacklevel=2)
         if config.name in seen_names:
             errors.append(f"line {line}: duplicate source name '{config.name}'")
             continue

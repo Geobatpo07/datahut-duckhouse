@@ -214,3 +214,20 @@ class TestCliEndToEnd:
         r = runner.invoke(cli_mod.cli, ["query", "SELECT * FROM nums", "--limit", "5"])
         assert r.exit_code == 0, r.output
         assert "(5 rows)" in r.output
+
+
+class TestSourcesCommand:
+    """`dhd sources validate`/`list` against the real ingestion/dlt/sources.yml
+    -- no Docker, no network, just the registry parse+validate path."""
+
+    def test_validate_the_real_registry(self, runner):
+        r = runner.invoke(cli_mod.cli, ["sources", "validate"])
+        assert r.exit_code == 0, r.output
+        assert "source(s) valid" in r.output
+        assert "pg_chinook_customers_incremental" in r.output
+
+    def test_list_the_real_registry(self, runner):
+        r = runner.invoke(cli_mod.cli, ["sources", "list"])
+        assert r.exit_code == 0, r.output
+        assert "write_disposition" in r.output  # header row
+        assert "jsonplaceholder" in r.output

@@ -202,6 +202,74 @@ sources:
             registry.load_sources(path)
 
 
+class TestIncrementalWriteDispositionInteraction:
+    def test_incremental_with_append_is_rejected(self, registry, tmp_path):
+        path = _write(
+            tmp_path,
+            """
+sources:
+  - name: x
+    family: sql
+    connector: sql_database
+    secret_ref: X_URL
+    dialect: sqlite
+    write_disposition: append
+    incremental:
+      column: updated_at
+      type: timestamp
+""",
+        )
+        with pytest.raises(registry.SourcesConfigError, match="duplicates rows"):
+            registry.load_sources(path)
+
+    def test_incremental_with_replace_warns_but_does_not_reject(
+        self, registry, tmp_path
+    ):
+        path = _write(
+            tmp_path,
+            """
+sources:
+  - name: x
+    family: sql
+    connector: sql_database
+    secret_ref: X_URL
+    dialect: sqlite
+    write_disposition: replace
+    incremental:
+      column: updated_at
+      type: timestamp
+""",
+        )
+        warnings: list[str] = []
+        sources = registry.load_sources(path, collect_warnings=warnings)
+        assert len(sources) == 1
+        assert len(warnings) == 1
+        assert "silent data loss" in warnings[0]
+        assert "line 3" in warnings[0]  # the "  - name: x" line (see idx math above)
+
+    def test_incremental_with_merge_is_silent(self, registry, tmp_path):
+        path = _write(
+            tmp_path,
+            """
+sources:
+  - name: x
+    family: sql
+    connector: sql_database
+    secret_ref: X_URL
+    dialect: sqlite
+    write_disposition: merge
+    primary_key: [id]
+    incremental:
+      column: updated_at
+      type: timestamp
+""",
+        )
+        warnings: list[str] = []
+        sources = registry.load_sources(path, collect_warnings=warnings)
+        assert len(sources) == 1
+        assert warnings == []
+
+
 class TestErrorMessagesAreReadable:
     def test_reports_line_number_and_field(self, registry, tmp_path):
         path = _write(
