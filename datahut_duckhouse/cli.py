@@ -196,6 +196,32 @@ def insert(ctx: click.Context, table: str, source: str, mode: str) -> None:
     click.echo(f"{verb} '{table}' with {data.num_rows} rows.")
 
 
+@cli.command("drop-table")
+@click.argument("name")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+@click.pass_context
+def drop_table(ctx: click.Context, name: str, yes: bool) -> None:
+    """Drop table NAME. Irreversible -- asks for confirmation unless --yes.
+
+    Works against both engines: the flight engine dispatches xorq's own
+    (pre-existing, unmodified) `drop_table` Flight action; --engine
+    pyiceberg drops straight from the Iceberg catalog.
+    """
+    backend = _connect_or_die(ctx)
+    if name not in set(backend.list_tables()):
+        raise click.ClickException(f"Table '{name}' does not exist.")
+    if not yes and not click.confirm(f"Drop table '{name}'? This cannot be undone."):
+        click.echo("Aborted.")
+        return
+    if _resolve_engine(ctx) == "pyiceberg":
+        backend.drop_table(name)
+    else:
+        backend.con.do_action(
+            "drop_table", {"name": name, "database": None, "force": False}
+        )
+    click.echo(f"Dropped '{name}'.")
+
+
 @cli.command()
 @click.argument("sql")
 @click.option(
