@@ -20,6 +20,7 @@ import pyarrow.parquet as papq
 
 from datahut_duckhouse import __version__
 from datahut_duckhouse.connection import FlightUnavailableError, connect, flight_target
+from datahut_duckhouse.flight_version_guard import FlightPythonVersionMismatchError
 
 ENGINES = ("flight", "pyiceberg")
 
@@ -116,6 +117,8 @@ def _connect_or_die(ctx: click.Context):
                 raise click.ClickException(str(exc)) from exc
         return connect()
     except FlightUnavailableError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except FlightPythonVersionMismatchError as exc:
         raise click.ClickException(str(exc)) from exc
 
 

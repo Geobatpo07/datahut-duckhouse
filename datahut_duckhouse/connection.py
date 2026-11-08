@@ -24,6 +24,8 @@ from contextlib import closing
 
 from xorq.flight.backend import Backend as _FlightBackend
 
+from datahut_duckhouse.flight_version_guard import check_python_version
+
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 8815
 
@@ -61,6 +63,7 @@ def connect() -> _FlightBackend:
     _assert_reachable(host, port)
     backend = _FlightBackend()
     backend.do_connect(host=host, port=port)
+    check_python_version(backend)
     return backend
 
 
