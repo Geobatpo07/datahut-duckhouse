@@ -164,7 +164,39 @@ further out, in `xorq`'s own Flight client/server pair.
 Keep the Flight client and server's Python **minor** version identical.
 Verified to fully avoid the crash in both directions (matching-version
 Windows client against the real Linux/Docker server: clean; mismatched
-Windows client against the same server: 100% reproducible crash). In this
-repo that means keeping the `uv`-managed dev venv's Python version equal to
-`.devcontainer/flight-server.Dockerfile`'s `ARG PYTHON_VERSION`, which
-`tests/test_python_version_matches_flight_image.py` now asserts.
+Windows client against the same server: 100% reproducible crash).
+
+## Downstream mitigation shipped in this repo (`chore/python-matrix`, 2026-11-08)
+
+Rather than just document the workaround, `datahut-duckhouse` now ships a
+small client-side guard
+(`datahut_duckhouse/flight_version_guard.py`) that makes the mismatch
+impossible to hit silently, without waiting on an upstream fix:
+
+- Registers a tiny custom Flight action at runtime via xorq's own existing
+  `add-action` (no `xorq`/`HybridBackend` changes) that reports the
+  server's `sys.version_info[:2]` as a plain `(major, minor)` tuple of
+  ints. Plain values survive the cross-version `cloudpickle` round trip
+  fine -- confirmed live, host Python 3.13 against a still-3.11 server, no
+  crash -- since only `Annotable` instances (this issue's actual trigger)
+  are affected.
+- One thing ruled out along the way: the guard's action class can't
+  subclass xorq's own `AbstractAction` -- its `name`/`description` are
+  `classproperty` objects, which `cloudpickle` refuses to pickle at the
+  class level (`TypeError: cannot pickle 'classproperty' object`, raised
+  client-side, before any network I/O). A plain class with a `name` string
+  attribute and a `do_action` classmethod is enough; the server's dispatch
+  (`xorq/flight/server.py`) never actually needed the ABC itself.
+- Every `dhd` command compares the server's answer to its own version
+  before issuing anything that could round-trip a Schema/`Annotable`
+  object, and refuses with a clear message on a mismatch instead of
+  segfaulting. Verified live, both directions, against real Docker/MinIO
+  containers.
+
+This is a workaround for *this* downstream project's CLI, not a fix for the
+underlying `cloudpickle`/`Annotable` fragility described above -- any other
+caller of `xorq.flight` that round-trips a `Schema`/`Annotable` across a
+Python-version boundary is still exposed. See
+`.devcontainer/flight-server.Dockerfile` (now built for either Python 3.11
+or 3.13 via `--build-arg PYTHON_VERSION=`) and the README's Python-version
+matrix section for the full story and verification.

@@ -10,9 +10,9 @@ Downloads ``tests/data/Chinook_Sqlite.sqlite`` on first run if missing
 (``scripts/fetch_chinook.py``) and loads the chosen source into a dedicated
 local Iceberg warehouse (``scripts/_demo_warehouse/``, gitignored) via
 ``datahut_duckhouse.ingest_dlt.run_ingest_dlt`` -- the same code `dhd
-ingest-dlt` uses, always the pyiceberg engine, never the default flight
-engine (see README Known gaps). Re-running overwrites, so the demo is
-idempotent.
+ingest-dlt` uses, always the pyiceberg engine: a serverless batch load, not
+a workaround (see README's Python-version matrix section). Re-running
+overwrites, so the demo is idempotent.
 """
 
 from __future__ import annotations

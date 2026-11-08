@@ -2,20 +2,49 @@
 
 ## Unreleased
 
+### Fixed
+
+- **The `dhd create-table` / `dhd query` segfault is now guarded, not just
+  documented** (`chore/python-matrix`): every `dhd` command that talks to
+  the Flight server now checks the server's Python minor version right
+  after connecting (`datahut_duckhouse/flight_version_guard.py`, a tiny
+  Flight action registered at runtime via xorq's existing `add-action` — no
+  `HybridBackend`/xorq changes) and refuses cleanly, non-zero exit, before
+  sending anything that could trigger the bug. Verified live, both
+  directions, against real Docker/MinIO containers (3.13 client vs. 3.11
+  server, and 3.11 vs. 3.13) — neither segfaults.
+- Widened the supported Python-version matrix to **3.11 and 3.13** (dev
+  defaults to 3.13 via a new `.python-version`; `requires-python` is now
+  `>=3.11,<3.14`): verified first in a temporary `uv venv --python 3.13`
+  that every dependency, including `xorq==0.4.11`, `duckdb<1.2` (and its
+  `duckdb.functional` submodule, the actual reason for that pin),
+  `pyiceberg`, and `pymssql`, installs and imports cleanly — no wheel gaps,
+  no module-load-time failures. `.devcontainer/flight-server.Dockerfile`'s
+  `ARG PYTHON_VERSION` now defaults to 3.13 and is overridable per build
+  (`docker-compose.yml`'s flight-server service gained a matching
+  `PYTHON_VERSION` build arg); verified by building and round-tripping
+  `create-table`/`insert`/`query`/`list-tables` against both versions with
+  a matching client, and via `scripts/smoke_test.py` on both. `ci.yml`
+  and `integration.yml` now matrix over `[3.11, 3.13]`.
+  `tests/test_python_version_matches_flight_image.py` no longer requires
+  the host and the Dockerfile's default to be bit-for-bit equal — it checks
+  matrix membership instead, so it doesn't go red just because a host or CI
+  runner picked the other supported version.
+- One thing tried and reverted: flooring `[tool.mypy]`'s `python_version` to
+  `3.11` to match the new minimum. Numpy's own bundled `.pyi` stubs use the
+  `type` statement (PEP 695, 3.12+-only syntax), so mypy fails immediately
+  on an unrelated syntax error; kept at `3.12`.
+
 ### Investigated
 
 - **`dhd create-table` / `dhd query` segfault root cause found and verified**
   (`fix/segfault-diagnosis`): a client/server Python *minor*-version mismatch
   breaks `cloudpickle`'s cross-version reconstruction of xorq's vendored
   `ibis` `Schema`/`Annotable` class on the `get_schema_using_query` Flight
-  action — not MinIO, not Docker networking, not an xorq regression. Verified
-  in both directions with a minimal reproducer (`scripts/repro_segfault.py`)
-  and a temporary `uv venv --python 3.11`. Not fixed in this repo (the
-  fragile part is upstream, in xorq + cloudpickle — draft issue at
-  `docs/UPSTREAM_ISSUE.md`); a working mitigation (pin matching Python
-  versions) is documented but not applied. New regression guard,
-  `tests/test_python_version_matches_flight_image.py`, intentionally fails on
-  this dev machine until that's done. Full writeup in ADR-0001.
+  action — not MinIO, not Docker networking, not an xorq regression. Not
+  fixed upstream (the fragile part is in xorq + cloudpickle — draft issue at
+  `docs/UPSTREAM_ISSUE.md`); now guarded downstream instead, see "Fixed"
+  above. Full writeup in ADR-0001.
 
 ### Works today
 

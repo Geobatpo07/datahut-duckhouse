@@ -54,7 +54,11 @@ but **not functional yet** — see [Known gaps](#-known-gaps) and
 
 ## ⚙️ Requirements
 
-- [Python 3.11 or 3.12](https://www.python.org/downloads/) (uv can install it for you)
+- [Python 3.11 or 3.13](https://www.python.org/downloads/) — the two versions
+  this project builds/tests the Flight server image for (uv can install either
+  for you). **Client and server must run the same minor version in any given
+  deployment** — see [the Python-version matrix](#-python-version-matrix-client-and-server-must-match)
+  below.
 - [uv](https://docs.astral.sh/uv/) — dependency & environment manager
 - [Docker](https://www.docker.com/) with the Compose plugin
 
@@ -125,10 +129,10 @@ uv run dhd query "SELECT * FROM sales"
 If the server isn't running it fails with a clear message rather than hanging.
 `dhd branch …` is a placeholder until Nessie lands (ADR-0002 / Phase 3).
 
-> ⚠️ **Against a real (Dockerized) Flight server + MinIO, `dhd create-table` and
-> `dhd query` on the default `flight` engine currently segfault** — see
-> [Démarrage rapide (Docker)](#-démarrage-rapide-docker) below for the exact
-> reproduction and the working alternative (`--engine pyiceberg`).
+> ⚠️ **The Flight client and server must run the same Python minor version**
+> (3.11 or 3.13 — see [the Python-version matrix](#-python-version-matrix-client-and-server-must-match)
+> below). A mismatch used to segfault `dhd create-table`/`dhd query`; `dhd`
+> now detects it itself and refuses cleanly before sending anything.
 
 #### 🐳 Démarrage rapide (Docker)
 
@@ -141,55 +145,41 @@ docker compose up --build -d
 docker compose ps                    # minio, xorq-service, flight-server, xorq-admin -> healthy; trino crash-loops, see below
 ```
 
-With the stack up, the full CLI round trip against the real containers
-(`localhost:8815` Flight server, `localhost:9000` MinIO S3):
+With the stack up (flight-server built at its default, Python 3.13 — see
+[the Python-version matrix](#-python-version-matrix-client-and-server-must-match)
+below), the full CLI round trip against the real containers (`localhost:8815`
+Flight server, `localhost:9000` MinIO S3), with a matching Python-3.13
+client:
 
 ```bash
+uv run dhd create-table sales data/sales.csv              # OK
+uv run dhd insert sales data/sales_new.csv --mode append  # OK
+uv run dhd query "SELECT * FROM sales"                    # OK
 uv run dhd list-tables                                    # OK
-uv run dhd insert sales data/sales_new.csv --mode append  # OK (table already existed from a prior run here)
-uv run dhd create-table sales data/sales.csv              # Segmentation fault (exit 139)
-uv run dhd query "SELECT * FROM sales"                    # Segmentation fault (exit 139), 100% reproducible
 ```
 
-This is the **same bug class** previously documented for xorq 0.2.4
-(cloudpickling an ibis `Schema` in a Flight action response) — but it still
-reproduces on xorq 0.4.11 against a real Dockerized Flight server + real MinIO,
-even though the fix had been verified under a local `moto` S3 mock in a
-previous pass (see the correction below). Any action that round-trips a
-table's `Schema` (`create-table`'s confirmation step, `query`) crashes the
-`dhd` client process outright (`Windows fatal exception: access violation` /
-SIGSEGV); `list-tables` and `insert` do not and work fine.
-
-**Root cause found and verified (2026-11-08, `fix/segfault-diagnosis`):** it's
-a client/server **Python minor-version mismatch**, not MinIO, not Docker
-networking, and not an xorq-version regression. `cloudpickle`'s
-reconstruction of xorq's vendored `ibis` `Schema`/`Annotable` class breaks
-across a Python minor-version boundary — this host's dev venv resolved to
-Python 3.12.7 (`pyproject.toml`'s `requires-python = ">=3.11,<3.13"` is a
-*range*), while `.devcontainer/flight-server.Dockerfile` pins the image to
-Python 3.11. Verified in both directions: a Python-3.11 client (either from
-inside the container, or from a separate `uv venv --python 3.11` on this same
-Windows host) never crashes against the exact same Docker + MinIO server; a
-Python-3.12 client crashes 100% of the time. Full mechanism, the minimal
-reproducer (`scripts/repro_segfault.py`), and the draft upstream issue are in
+**Root cause found and verified (2026-11-08, `fix/segfault-diagnosis`):**
+`create-table`'s confirmation step and `query` round-trip a `cloudpickle`d
+xorq/`ibis` `Schema`/`Annotable` object through the Flight action
+`get_schema_using_query`; `cloudpickle`'s reconstruction of that object
+breaks across a Python **minor**-version boundary between client and
+server — not MinIO, not Docker networking, not an xorq-version regression.
+Verified in both directions with a bare `pyarrow.flight` + `cloudpickle`
+reproducer (`scripts/repro_segfault.py`) and real mismatched/matched
+client-server pairs. Full mechanism and the draft upstream issue are in
 [ADR-0001](docs/adr/0001-canonical-hybrid-backend.md#segfault-root-cause-2026-11-08-fixsegfault-diagnosis)
-and [`docs/UPSTREAM_ISSUE.md`](docs/UPSTREAM_ISSUE.md).
-`tests/test_python_version_matches_flight_image.py` guards against this
-regressing silently again (currently **fails on this dev machine** — Python
-3.12 vs. the image's pinned 3.11 — by design, until one side is repinned; see
-that test's docstring for the exact fix recipe).
+and [`docs/UPSTREAM_ISSUE.md`](docs/UPSTREAM_ISSUE.md); the bug itself is
+upstream (xorq's vendored `ibis` + `cloudpickle`), not fixed in this repo.
 
-**The working path against Docker today is `--engine pyiceberg`**, verified
-for the full round trip:
-
-```bash
-ICEBERG_WAREHOUSE=s3://duckhouse-warehouse/ S3_ENDPOINT=http://localhost:9000 \
-AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin123 \
-  uv run dhd --engine pyiceberg create-table sales data/sales.csv   # OK
-  uv run dhd --engine pyiceberg insert sales data/sales_new.csv --mode append  # OK
-  uv run dhd --engine pyiceberg query "SELECT * FROM sales"         # OK
-  uv run dhd --engine pyiceberg list-tables                         # OK
-```
+**Fixed here (`chore/python-matrix`, 2026-11-08):** every `dhd` command now
+checks the server's Python version right after connecting, before sending
+anything that could trigger the bug — see
+[the Python-version matrix](#-python-version-matrix-client-and-server-must-match)
+below for the rule, the two supported versions, and exactly what the guard
+does. On a matched pair (the default case above) the round trip just works.
+On a mismatch, `dhd` refuses immediately with a clear message instead of
+segfaulting — verified live, in both directions, against real Docker/MinIO
+containers.
 
 **`trino` does not start.** It crash-loops (`restart: unless-stopped` keeps
 retrying every ~15-20s): Trino 483 rejects the catalog config in
@@ -220,14 +210,15 @@ switched to `psycopg[binary]`), and `xorq-admin` reported permanently
 resolves to `::1` first, and nginx only listens on IPv4 — pointed it at
 `127.0.0.1`). Both are fixed in this repo's Dockerfiles already.
 
-**Correction to the previous pass's segfault write-up:** the "Verified round
-trip without Docker" section below claims the xorq 0.2.4 → 0.4.11 upgrade
-fixed the historical segfault, verified against a local `moto` S3 mock. That
-verification was real, but incomplete — it does **not** reproduce the actual
-failure condition. Against a real Dockerized Flight server + real MinIO, the
-segfault is still 100% reproducible on xorq 0.4.11, as shown above. Treat the
-`moto`-based claim below as disproven for the Docker/real-S3 case; `--engine
-pyiceberg` is the only verified-working path against Docker today.
+**Lesson learned (kept for posterity):** an earlier pass had claimed the xorq
+0.2.4 → 0.4.11 upgrade fixed the historical segfault, verified against a
+local `moto` S3 mock. That verification was real, but incomplete — a `moto`
+mock and a real MinIO container run the exact same Python *process* as the
+test, so a client/server Python-version mismatch can't happen there at all;
+it says nothing about the real, cross-process failure mode. Don't trust an
+in-process or `moto`-backed test as evidence this class of bug is fixed —
+the "Verified round trip without Docker" section right below has the same
+caveat.
 
 #### Verified round trip without Docker
 
@@ -261,13 +252,71 @@ there.
 
 The same round trip was also re-run with an `s3://` warehouse against a local
 `moto` S3 mock (`uv run moto_server`, same separate-process setup), and did
-**not** reproduce the historical segfault there. **This turned out to be an
-incomplete test, not a fix:** against a real Dockerized Flight server + real
-MinIO (verified 2026-11-08, see
-[Démarrage rapide (Docker)](#-démarrage-rapide-docker)), the same segfault is
-100% reproducible on xorq 0.4.11. Whatever `moto` mocks differs from real S3
-in a way that avoids the crash; don't trust the `moto` result as evidence the
-bug is fixed.
+**not** reproduce the historical segfault there — at the time this looked
+like evidence the bug was S3-backend-specific (real MinIO vs. `moto`). It
+wasn't: the actual variable was the Python version of the two processes
+involved, which happened to match in every one of these non-Docker runs
+(same host, same `uv`-managed venv on both ends) and didn't in the Docker
+case (host venv vs. the image's separately-pinned Python). See the root
+cause note above and [ADR-0001](docs/adr/0001-canonical-hybrid-backend.md#segfault-root-cause-2026-11-08-fixsegfault-diagnosis)
+for the full chain of evidence.
+
+#### 🧬 Python-version matrix: client and server must match
+
+This project builds/tests the flight-server image for **two** Python minor
+versions — **3.11** and **3.13** (same `.devcontainer/flight-server.Dockerfile`,
+different `ARG PYTHON_VERSION`; `3.13` is the default, matching this repo's
+own `.python-version`). **Rule: in any one deployment, the `dhd` client and
+the flight-server it talks to must run the same minor version.** Mixing them
+is what caused the segfault documented above — `cloudpickle`'s
+reconstruction of a vendored `ibis` object isn't stable across a Python
+minor-version boundary (upstream bug, not fixed here; see
+[`docs/UPSTREAM_ISSUE.md`](docs/UPSTREAM_ISSUE.md)).
+
+Build the image for either version:
+
+```bash
+docker compose build flight-server                      # 3.13 (default)
+PYTHON_VERSION=3.11 docker compose build flight-server   # 3.11
+# or, equivalently: docker compose build --build-arg PYTHON_VERSION=3.11 flight-server
+```
+
+...and run a matching client with `uv venv --python 3.11` (or `3.13`) +
+`uv sync`, or just edit `.python-version` + `uv sync` if that's your main dev
+venv.
+
+**You don't have to get this right by hand.** Every `dhd` command that talks
+to the Flight server (`datahut_duckhouse.connection.connect`, used by all
+four `--engine flight` commands) registers a tiny Flight action at runtime —
+no `HybridBackend` or xorq changes — that reports the server's Python
+version, and compares it to the client's own before doing anything else. On
+a match, nothing changes. On a mismatch, it exits non-zero with a clear
+message instead of segfaulting:
+
+```
+Error: Client is Python 3.11, but the Flight server is Python 3.13. Running
+`dhd` against a server on a different Python *minor* version segfaults the
+client on any Schema-returning action (`create-table`'s confirmation,
+`query`) -- see docs/adr/0001-canonical-hybrid-backend.md and
+docs/UPSTREAM_ISSUE.md. Fix: rebuild/run the flight-server image with
+`--build-arg PYTHON_VERSION=3.11`, or run this client under Python 3.13
+(e.g. `uv venv --python 3.13`).
+```
+
+Verified live, both directions, against real Docker/MinIO containers: a
+3.13 client against a 3.11 server, and a 3.11 client against a 3.13 server —
+both refuse cleanly, neither segfaults. See
+`datahut_duckhouse/flight_version_guard.py` and
+`tests/test_flight_version_guard.py`.
+
+`tests/test_python_version_matches_flight_image.py` is a separate, narrower
+sanity check: it catches the matrix itself drifting (the host running an
+untested Python version, or the Dockerfile's default drifting to one) — it
+does **not** stand in for the runtime guard above, and does not require the
+host and the Dockerfile default to be equal to each other.
+
+CI (`ci.yml`, `integration.yml`) runs the fast suite and the Docker smoke
+test on both 3.11 and 3.13.
 
 #### Engines: `--engine flight` (default) vs `--engine pyiceberg`
 
@@ -326,6 +375,7 @@ datahut-duckhouse/
 ├── datahut_duckhouse/    # `dhd` CLI (the only packaged component)
 │   ├── cli.py            # click commands, --engine flight|pyiceberg
 │   ├── connection.py     # flight engine: connects to the Flight server
+│   ├── flight_version_guard.py  # refuses a Python-minor-version-mismatched server
 │   ├── ingest.py         # pyiceberg engine: talks to Iceberg directly, no xorq
 │   └── ingest_dlt.py     # `dhd ingest-dlt`: loads dlt-extracted sources into Iceberg
 ├── flight_server/        # Arrow Flight Server + HybridBackend
@@ -373,6 +423,7 @@ datahut-duckhouse/
 ├── .devcontainer/        # Dockerfiles + devcontainer.json + .env.example
 ├── .env                  # Secrets & config (git-ignored; from .devcontainer/.env.example)
 ├── docker-compose.yml    # Stack definition (root; no secrets)
+├── .python-version       # dev default (3.13) -- see Python-version matrix
 ├── uv.lock
 └── pyproject.toml
 ```
@@ -423,8 +474,8 @@ docker compose -f docker-compose.test.yml up -d
 uv run python scripts/demo.py --source pg_chinook
 uv run python scripts/demo.py --source mysql_chinook
 
-# Charger n'importe quelle source dans Iceberg (toujours --engine pyiceberg,
-# voir Known gaps) :
+# Charger n'importe quelle source dans Iceberg (toujours --engine pyiceberg :
+# chargement serverless en masse, pas de serveur Flight requis) :
 uv run dhd ingest-dlt --source sqlite_chinook   # ou pg_chinook / mysql_chinook / all
 
 # Tests d'intégration réels (besoin du stack Docker + du fichier SQLite) :
@@ -487,22 +538,11 @@ for that future work, not a working path today.
 - **Trino doesn't start** (41 rejected config properties on Trino 483), and
   has no catalog shared with the rest of the stack even when it does — see
   the BI section above and [Démarrage rapide (Docker)](#-démarrage-rapide-docker).
-- **`dhd create-table` / `dhd query` segfault against a real Dockerized Flight
-  server + real MinIO**, on xorq 0.4.11, 100% reproducible — see
-  [Démarrage rapide (Docker)](#-démarrage-rapide-docker). Use `--engine
-  pyiceberg` instead; it's the only verified-working path against Docker.
-  **Root cause found (2026-11-08):** a client/server Python minor-version
-  mismatch breaks `cloudpickle` across the Flight schema round trip — see the
-  "Root cause found and verified" note above, [ADR-0001](docs/adr/0001-canonical-hybrid-backend.md#segfault-root-cause-2026-11-08-fixsegfault-diagnosis)
-  and [`docs/UPSTREAM_ISSUE.md`](docs/UPSTREAM_ISSUE.md). Not fixed in this
-  repo (the fragile part is upstream, in xorq's vendored `ibis` +
-  `cloudpickle`); a documented mitigation exists (pin matching Python
-  versions) but was not applied, since it would force recreating the dev
-  `.venv` or rebuilding the Docker image.
-- `tests/test_python_version_matches_flight_image.py` currently **fails on
-  this dev machine** (host Python 3.12 vs. the flight-server image's pinned
-  3.11) — intentional, see the test's docstring; it's the regression guard
-  for the gap above, not a new unrelated breakage.
+- **The Flight client and server must be on the same Python minor version**
+  (upstream `cloudpickle`/xorq fragility, not fixed in this repo) — see
+  [the Python-version matrix](#-python-version-matrix-client-and-server-must-match)
+  above. This is no longer a silent crash risk: `dhd` checks and refuses
+  cleanly on a mismatch (`datahut_duckhouse/flight_version_guard.py`).
 - `config/trino/etc/catalog/iceberg.properties` hardcodes MinIO credentials —
   see the warning in step 3 above.
 

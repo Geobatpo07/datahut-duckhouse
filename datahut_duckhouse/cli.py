@@ -233,10 +233,12 @@ def query(ctx: click.Context, sql: str, limit: int | None, fmt: str) -> None:
 def ingest_dlt(source_name: str) -> None:
     """Extract a dlt-configured source (Chinook, etc.) and load it into Iceberg.
 
-    Always uses the pyiceberg engine, independent of --engine/DHD_ENGINE: the
-    default flight engine segfaults on any Schema round-trip against a real
-    server (see README Known gaps). Loads overwrite each table on every run,
-    so re-running this command never duplicates rows.
+    Always uses the pyiceberg engine, independent of --engine/DHD_ENGINE:
+    this is a serverless batch load, so no Flight server is needed at all --
+    not a workaround for the flight engine (see README's Python-version
+    matrix section for the one thing that engine does need: a client and
+    server on the same Python minor version). Loads overwrite each table on
+    every run, so re-running this command never duplicates rows.
     """
     from datahut_duckhouse.ingest_dlt import IngestDltError, run_ingest_dlt
 
