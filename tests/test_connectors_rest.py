@@ -60,26 +60,18 @@ class TestRestSourcesActuallyLoadIntoIceberg:
     """Point 3 of the follow-up review: extraction alone (above) isn't the
     same as `dhd ingest-dlt` actually committing the result into Iceberg --
     exercised here through the real CLI end to end, against the real
-    public APIs, on a throwaway local warehouse."""
+    public APIs. `ingest-dlt` now always writes `replace`/`append` through
+    the Flight server (follow-up review, step 0), so this needs a reachable
+    one -- the shared in-process `flight_server` fixture (conftest.py),
+    queried through the default (flight) engine."""
 
-    @pytest.fixture
-    def pyiceberg_env(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("ICEBERG_WAREHOUSE", "")
-        monkeypatch.setenv("ICEBERG_WAREHOUSE_PATH", str(tmp_path / "wh"))
-        monkeypatch.setenv("ICEBERG_NAMESPACE", "default")
-        monkeypatch.delenv("ICEBERG_CATALOG_URI", raising=False)
-        monkeypatch.delenv("DHD_ENGINE", raising=False)
-
-    def test_jsonplaceholder_loads_and_is_queryable(self, pyiceberg_env):
+    def test_jsonplaceholder_loads_and_is_queryable(self, flight_server):
         from click.testing import CliRunner
 
         from datahut_duckhouse import cli as cli_mod
 
         runner = CliRunner()
-        r = runner.invoke(
-            cli_mod.cli,
-            ["--engine", "pyiceberg", "ingest-dlt", "--source", "jsonplaceholder"],
-        )
+        r = runner.invoke(cli_mod.cli, ["ingest-dlt", "--source", "jsonplaceholder"])
         assert r.exit_code == 0, r.output
         assert "jsonplaceholder_users" in r.output
         assert "jsonplaceholder_posts" in r.output
@@ -87,8 +79,6 @@ class TestRestSourcesActuallyLoadIntoIceberg:
         r = runner.invoke(
             cli_mod.cli,
             [
-                "--engine",
-                "pyiceberg",
                 "query",
                 "SELECT count(*) AS n FROM jsonplaceholder_users",
                 "--format",
@@ -98,7 +88,7 @@ class TestRestSourcesActuallyLoadIntoIceberg:
         assert r.exit_code == 0, r.output
         assert '"n": 10' in r.output
 
-    def test_open_brewery_db_loads_and_rerun_does_not_duplicate(self, pyiceberg_env):
+    def test_open_brewery_db_loads_and_rerun_does_not_duplicate(self, flight_server):
         from click.testing import CliRunner
 
         from datahut_duckhouse import cli as cli_mod
@@ -106,16 +96,13 @@ class TestRestSourcesActuallyLoadIntoIceberg:
         runner = CliRunner()
         for _ in range(2):  # write_disposition: replace -- must not duplicate
             r = runner.invoke(
-                cli_mod.cli,
-                ["--engine", "pyiceberg", "ingest-dlt", "--source", "open_brewery_db"],
+                cli_mod.cli, ["ingest-dlt", "--source", "open_brewery_db"]
             )
             assert r.exit_code == 0, r.output
 
         r = runner.invoke(
             cli_mod.cli,
             [
-                "--engine",
-                "pyiceberg",
                 "query",
                 "SELECT count(*) AS n FROM open_brewery_db_breweries",
                 "--format",

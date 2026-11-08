@@ -151,6 +151,11 @@ class PyIcebergEngine:
             or f"sqlite:///{meta_dir.absolute().as_posix()}/pyiceberg_catalog.db",
             "warehouse": warehouse if self.is_remote else f"file://{warehouse}",
         }
+        # Exposed for catalog_guard.check_same_catalog: the identity that
+        # must match the Flight server's own (HybridBackend.uri /
+        # .warehouse_path) before a direct pyiceberg write is allowed.
+        self.uri = params["uri"]
+        self.warehouse_path = params["warehouse"]
         if not self.is_remote:
             return params
 

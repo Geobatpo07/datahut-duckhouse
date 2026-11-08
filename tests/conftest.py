@@ -3,7 +3,9 @@ Pytest configuration and fixtures for DataHut-DuckHouse tests.
 """
 
 import os
+import socket
 import tempfile
+import time
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -91,3 +93,54 @@ def duckdb_connection(
     conn = duckdb.connect(test_duckdb_path)
     yield conn
     conn.close()
+
+
+@pytest.fixture(scope="module")
+def flight_server(tmp_path_factory):
+    """A real in-process Flight server backed by a real ``HybridBackend``, on
+    a local temp ``file://`` warehouse -- no Docker, no S3 credentials.
+    Shared across ``test_cli.py`` and ``test_ingest_dlt.py`` (step 0, Vague
+    1b follow-up: ``dhd ingest``'s ``replace``/``append`` now need a real
+    Flight server to write through, same as `dhd create-table`/`dhd insert`)."""
+    d = tmp_path_factory.mktemp("dhd_e2e")
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+
+    old = {
+        k: os.environ.get(k)
+        for k in (
+            "ICEBERG_WAREHOUSE",
+            "ICEBERG_WAREHOUSE_PATH",
+            "ICEBERG_CATALOG_URI",
+            "DUCKDB_PATH",
+            "FLIGHT_SERVER_HOST",
+            "FLIGHT_SERVER_PORT",
+        )
+    }
+    # Empty (not absent): a repo-root .env + load_dotenv() would otherwise
+    # repopulate ICEBERG_WAREHOUSE and force this local test onto s3://.
+    os.environ["ICEBERG_WAREHOUSE"] = ""
+    os.environ["ICEBERG_WAREHOUSE_PATH"] = str(d / "wh")
+    os.environ.pop("ICEBERG_CATALOG_URI", None)
+    os.environ["DUCKDB_PATH"] = str(d / "duckhouse.duckdb")
+    os.environ["FLIGHT_SERVER_HOST"] = "127.0.0.1"
+    os.environ["FLIGHT_SERVER_PORT"] = str(port)
+
+    from flight_server.app.xorq_config import get_flight_server
+
+    server = get_flight_server()
+    server.serve(block=False)
+    time.sleep(1)
+
+    yield port
+
+    try:
+        server.close()
+    except Exception:  # noqa: BLE001 - best effort teardown
+        pass
+    for k, v in old.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v

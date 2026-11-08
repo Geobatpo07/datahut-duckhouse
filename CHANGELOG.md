@@ -43,6 +43,33 @@
   after its first JSON round trip, which `dlt.sources.incremental` rejected.
   See [docs/INGESTION.md](docs/INGESTION.md) for how to add a source.
 
+### `dhd ingest` restructuring (`feat/dhd-ingest`), step 0: visibility
+
+- **Fixed a real bug, reproduced live first**: a table loaded by `dhd
+  ingest-dlt` was written straight to pyiceberg from the client and was
+  **invisible** to `dhd query`/`dhd list-tables` -- two physically
+  different SQLite catalog files (the Flight server's, in a Docker named
+  volume; the client's, on the host). Fix: `replace`/`append` now write
+  through the Flight server itself (`datahut_duckhouse/ingest_sinks.py`'s
+  `FlightSink`, the same action `dhd create-table`/`insert` use), so a
+  table lands exactly where reads already look. Regression test:
+  `tests/test_cli.py::TestCliEndToEnd::test_ingested_table_is_visible_via_flight_query`.
+- `merge` still writes direct via pyiceberg (`DirectSink`) -- no
+  Flight-level upsert exists yet (`HybridBackend.upsert()` is inherited,
+  unmodified, from xorq, but unreachable over the wire). That direct write
+  is now gated by `datahut_duckhouse/catalog_guard.py`: a dynamically
+  registered Flight action (xorq's own `add-action`, no `HybridBackend`
+  change) proves the client and the server share one catalog before
+  allowing it; a mismatch exits **2** with both catalogs named.
+  `schema_contract: evolve` under `append` moved server-side the same way
+  (`schema_evolve_action.py`).
+- This is a real behavior change, stated plainly: `dhd ingest-dlt`/`dhd
+  ingest` now always needs a reachable Flight server, for every
+  `write_disposition` -- previously this command's whole point was to need
+  none. See [docs/INGESTION.md](docs/INGESTION.md)'s rewritten "single
+  writer" section, including the estimate for a real Flight-routed
+  `merge` (not implemented here, per explicit instruction).
+
 ### Follow-up review (same branch)
 
 - `incremental` + `write_disposition: append` is now rejected at

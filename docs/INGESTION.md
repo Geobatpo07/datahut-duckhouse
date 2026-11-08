@@ -109,55 +109,65 @@ inherently wrong if a source genuinely re-pulls its whole window at once.
 
 ## Who actually writes to Iceberg (single writer, ADR-0001)
 
-For all three `write_disposition` values alike -- `merge` is not special
-here -- **the writer is the client process running `dhd ingest-dlt`**
-(`datahut_duckhouse.ingest.PyIcebergEngine`, talking to pyiceberg
-directly), never the Flight server/`HybridBackend`. `create_table` and
-`upload_table(mode=append|overwrite|merge)` all go through this exact same
-path.
+**Superseded 2026-11-08** (`feat/dhd-ingest`, step 0 of the second
+follow-up review) -- the finding below ("the writer is always the client")
+was verified and is kept for the record, but it is no longer how `dhd
+ingest-dlt` behaves. The fix:
 
-**Verified (2026-11-08), in this project's default configuration, this is
-not literal concurrent-writer corruption, but it is catalog
-fragmentation**, which is arguably worse day-to-day:
+| `write_disposition` | Who writes | How |
+|---|---|---|
+| `replace` | **the Flight server** | `FlightSink` -- `con.upload_table(mode="replace")`, the same action `dhd create-table`/`insert` use |
+| `append` | **the Flight server** | `FlightSink` -- `con.upload_table(mode=None)` (create-or-append) |
+| `merge` | the client, direct via pyiceberg | `DirectSink`, gated by `catalog_guard.check_same_catalog` |
 
-- The Flight server's catalog lives in a named Docker volume
-  (`flight_data`, confirmed via `docker volume inspect
-  datahut-duckhouse_flight_data` -- `Driver: local`, mounted at Docker's
-  own internal storage, never bind-mounted to the host).
-- `dhd ingest-dlt` run from the host falls back to
-  `ingestion/data/pyiceberg_catalog.db` **on the host** (`_local_meta_dir()`
-  in `ingest.py`) -- confirmed by opening that file directly: it already
-  held leftover tables from earlier, unrelated sessions (`sqlite_chinook_*`,
-  `smoke_*`), proving it is a real, silently-accumulating, long-lived
-  fallback location, not a throwaway temp file.
-- These are two **physically different SQLite files**. A table loaded by
-  `dhd ingest-dlt` is invisible to `dhd query`/`dhd list-tables --engine
-  flight` and vice versa, even though both may write into the *same*
-  underlying S3/MinIO bucket (`ICEBERG_WAREHOUSE` is shared via `.env`) --
-  the data files can coexist on S3 while neither catalog knows the other
-  table exists.
-- **If `ICEBERG_CATALOG_URI` is ever pointed at one shared catalog for
-  both** (e.g. a future Postgres-backed catalog -- Nessie is a separate,
-  larger change, ADR-0002), the risk flips: the Flight server and every
-  concurrent `dhd ingest-dlt` run become genuine concurrent writers to the
-  *same* catalog, which is exactly the "single writer" assumption
-  ADR-0001 flagged as an explicit interim limitation of a SQL(ite) catalog
-  -- and which neither pyiceberg nor this project arbitrates today.
+Reproduced live against the real Docker Flight server before fixing it:
+`CHINOOK_SQLITE_URL=... dhd ingest-dlt --source sqlite_chinook` created
+tables that were then **invisible** to `dhd query`/`dhd list-tables`
+(`Catalog Error: Table ... does not exist`) -- two physically different
+SQLite catalog files, one in the `flight_data` Docker named volume, one
+on the host (`ingestion/data/pyiceberg_catalog.db`, confirmed to already
+hold leftover tables from earlier, unrelated sessions). See
+`datahut_duckhouse/ingest_sinks.py`.
 
-**Proposed alternative, not implemented without explicit approval**:
-route `dhd ingest-dlt`'s writes through the Flight server instead of
-pyiceberg-direct (the same Flight action `dhd create-table`/`insert`
-already use). This is a real design change, not a one-line fix:
-`write_disposition: merge` has no equivalent in `HybridBackend` today
-(only `append`/`overwrite`, per ADR-0001) and would need one added
-server-side; it reintroduces the client/server Python-minor-version
-dependency (`flight_version_guard.py`, `chore/python-matrix`) for a path
-that was deliberately built to need no Flight server at all
-(`ingest_dlt.py`'s own docstring); and it would mean rewriting
-`ingest_dlt.py`'s "always uses the pyiceberg engine... no Flight server
-needed" claim throughout the docs. A single real writer would resolve
-*both* the fragmentation and the concurrency risk at once -- but is a
-decision for whoever owns this trade-off, not something to default into.
+`merge` still has no Flight-level equivalent: `HybridBackend` inherits a
+working `upsert()` *method* unmodified from xorq's `PyIcebergBackend`, but
+no Flight action or `UploadMode` reaches it over the wire
+(`xorq.flight.server.put_table` only dispatches create/append/replace --
+adding one is real scope, see "Next" below, deliberately not done here).
+So `merge` still writes directly via pyiceberg from the client -- but
+**only once proven to be a single writer**:
+`datahut_duckhouse/catalog_guard.py` registers a tiny action at runtime
+(xorq's own `add-action`, no `HybridBackend`/xorq change -- same technique
+as `flight_version_guard.py`) that reports the server's resolved catalog
+URI and warehouse path (read straight off the live `HybridBackend`
+instance), and compares them to the client's own
+(`PyIcebergEngine.uri`/`.warehouse_path`). A mismatch exits **2** with
+both catalogs named and a concrete fix, instead of silently writing to a
+second, invisible catalog.
+
+Schema evolution (`schema_contract: evolve`) under `append`, which used to
+mutate the table's Iceberg schema straight from the client, now needs the
+same thing server-side when the write itself moved there:
+`datahut_duckhouse/schema_evolve_action.py` adds one more dynamically
+registered action, reaching the server's own `.catalog` object (the exact
+one `HybridBackend` already exposes) to call the identical
+`update_schema().union_by_name(...).commit()` the old direct path used --
+again, no `HybridBackend` change.
+
+One consequence worth stating plainly: `dhd ingest-dlt`/`dhd ingest` now
+*always* needs a reachable Flight server, for every `write_disposition`,
+not just `merge` -- this is a real behavior change from Vague 1b, where
+the whole point of this command was to need no Flight server at all. That
+trade-off (visibility by default vs. a serverless batch path) was an
+explicit decision for this task, not a side effect.
+
+**Next** (not done here, estimate): a real `merge`-over-Flight needs (a) a
+new Flight action calling `server._conn.upsert(...)` -- small, same
+pattern as the two actions above, maybe half a day including tests; (b)
+deciding whether `UploadMode` grows a `MERGE` value (wire-protocol change,
+touches `xorq.flight.enums`/`server.put_table`, upstream-adjacent) or stays
+a bespoke action like schema-evolve (smaller, consistent with what's
+already here) -- the latter is the lower-risk default.
 
 ## Incremental extraction
 

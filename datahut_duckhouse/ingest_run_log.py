@@ -1,14 +1,17 @@
 """Run log for ``dhd ingest-dlt`` (Vague 1b, task 3): one row per run and per
 table (source, table, start, end, duration, rows, status, error).
 
-Logged into DataHut's own Iceberg catalog as ``_ingest_runs``, through the
-same ``backend`` connection ``run_ingest_dlt`` already has open -- one
-append per table per run, the same "one Iceberg commit" discipline as the
-data itself (see ``tests/test_ingest_dlt.py``'s snapshot-count test). If
-that table can't be prepared or appended to -- the catalog accepted the
-data writes but rejects this one, or anything else goes wrong logging it --
-falls back to a local SQLite file and says so on stderr, rather than
-silently dropping the log.
+Logged through the Flight server (the same single-writer path
+``ingest_sinks.FlightSink`` uses for ``replace``/``append``) as
+``_ingest_runs``, so the log itself is visible to ``dhd query`` too --
+previously it was written pyiceberg-direct and suffered the exact same
+"invisible from Flight" bug as the ingested data (step 0 of the follow-up
+review). One append per table per run, the same "one Iceberg commit"
+discipline as the data itself (see ``tests/test_ingest_dlt.py``'s
+snapshot-count test). If that table can't be prepared or appended to --
+the catalog accepted the data writes but rejects this one, or anything
+else goes wrong logging it -- falls back to a local SQLite file and says
+so on stderr, rather than silently dropping the log.
 """
 
 from __future__ import annotations
@@ -51,6 +54,11 @@ def _iso(epoch_s: float) -> str:
 
 
 class RunLog:
+    """``backend`` is a connected Flight backend (``connection.connect()``'s
+    return value) -- the client-side ``xorq.flight.backend.Backend``, not a
+    ``Sink``: that keeps the log on the Flight single-writer path
+    independently of which ``Sink`` wrote the table it's logging."""
+
     def __init__(self, backend) -> None:
         self.backend = backend
         self.run_id = str(uuid.uuid4())
@@ -103,7 +111,7 @@ class RunLog:
         }
         if self._use_iceberg:
             try:
-                self.backend.upload_table(
+                self.backend.con.upload_table(
                     RUN_LOG_TABLE,
                     pa.Table.from_pylist([row], schema=_SCHEMA),
                     mode="append",

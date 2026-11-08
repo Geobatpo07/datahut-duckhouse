@@ -478,9 +478,10 @@ docker compose -f docker-compose.test.yml up -d
 uv run python scripts/demo.py --source pg_chinook
 uv run python scripts/demo.py --source mysql_chinook
 
-# Charger n'importe quelle source dans Iceberg (toujours --engine pyiceberg :
-# chargement serverless en masse, pas de serveur Flight requis). Le registre
-# couvre 3 familles (sql/files/rest), voir docs/INGESTION.md :
+# Charger n'importe quelle source dans Iceberg (nécessite un serveur Flight
+# joignable : replace/append s'écrivent via lui, merge directement en
+# pyiceberg sous condition -- voir docs/INGESTION.md, "single writer").
+# Le registre couvre 3 familles (sql/files/rest) :
 uv run dhd sources list
 uv run dhd ingest-dlt --source sqlite_chinook   # ou --all, ou --dry-run
 

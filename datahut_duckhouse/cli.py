@@ -104,6 +104,14 @@ def _resolve_engine(ctx: click.Context) -> str:
     return engine
 
 
+class _ConfigClickException(click.ClickException):
+    """A ``click.ClickException`` that exits 2, not 1 -- a configuration
+    problem (bad registry, missing secret, mismatched catalog), not a run
+    failure."""
+
+    exit_code = 2
+
+
 def _connect_or_die(ctx: click.Context):
     engine = _resolve_engine(ctx)
     try:
@@ -271,13 +279,14 @@ def ingest_dlt(source_name: str | None, run_all: bool, dry_run: bool) -> None:
     """Extract a dlt-configured source (sql/files/rest family) and load it into
     Iceberg.
 
-    Always uses the pyiceberg engine, independent of --engine/DHD_ENGINE:
-    this is a serverless batch load, so no Flight server is needed at all --
-    not a workaround for the flight engine (see README's Python-version
-    matrix section for the one thing that engine does need: a client and
-    server on the same Python minor version). Each source's write_disposition
-    (ingestion/dlt/sources.yml) controls whether a re-run replaces, appends,
-    or merges -- see docs/INGESTION.md.
+    Requires a reachable Flight server independent of --engine/DHD_ENGINE:
+    ``replace``/``append`` are written through it (the same path ``dhd
+    create-table``/``dhd insert`` use), so the result is visible to ``dhd
+    query``/``dhd list-tables`` right away. ``merge`` still writes directly
+    via pyiceberg, but only once this client is proven to share the Flight
+    server's own Iceberg catalog -- otherwise this exits with code 2. Each
+    source's write_disposition (ingestion/dlt/sources.yml) controls whether
+    a re-run replaces, appends, or merges -- see docs/INGESTION.md.
     """
     if source_name and run_all:
         raise click.ClickException("Pass either --source NAME or --all, not both.")
@@ -286,13 +295,15 @@ def ingest_dlt(source_name: str | None, run_all: bool, dry_run: bool) -> None:
     target = "all" if run_all else source_name
     assert target is not None  # guaranteed by the pass/not-both checks above
 
-    from datahut_duckhouse.ingest_dlt import IngestDltError
+    from datahut_duckhouse.ingest_dlt import IngestConfigError, IngestDltError
 
     if dry_run:
         from datahut_duckhouse.ingest_dlt import plan_ingest_dlt
 
         try:
             sources = plan_ingest_dlt(target)
+        except IngestConfigError as exc:
+            raise _ConfigClickException(str(exc)) from exc
         except IngestDltError as exc:
             raise click.ClickException(str(exc)) from exc
         for source in sources:
@@ -313,6 +324,8 @@ def ingest_dlt(source_name: str | None, run_all: bool, dry_run: bool) -> None:
 
     try:
         results = run_ingest_dlt(target)
+    except IngestConfigError as exc:
+        raise _ConfigClickException(str(exc)) from exc
     except IngestDltError as exc:
         raise click.ClickException(str(exc)) from exc
     if not results:
