@@ -347,17 +347,14 @@ yet. Concretely, as of this writing:
 
 - Tenants are declared in [`config/tenants/tenants.yml`](config/tenants/tenants.yml),
   a static list with no enforcement behind it.
-- `scripts/create_tenant.py` / `scripts/delete_tenant.py` drive an in-memory
-  `XORQOrchestrator` (`orchestrator/core.py`) — state does not survive a restart,
-  and there is no persistence (that's ADR-0003/Phase 4).
+- `scripts/create_tenant.py` / `scripts/delete_tenant.py` are **not
+  implemented** — they exit 1 with a message pointing here instead of
+  pretending to work (they used to import a module that doesn't exist and
+  crash with `ModuleNotFoundError`).
 - `dhd` and `HybridBackend` have no tenant concept at all — every table lives in
   one shared namespace.
 - The Flight server has **no authentication**: anyone who can reach the port can
   read and write every table.
-
-```bash
-uv run python scripts/delete_tenant.py --id tenant_acme
-```
 
 ## 📈 BI Interface with Trino
 
