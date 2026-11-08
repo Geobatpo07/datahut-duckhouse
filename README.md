@@ -114,16 +114,12 @@ server — start one first (`make dev-server`, or
 uv run dhd create-table sales data/sales.csv      # .csv / .parquet / .json
 uv run dhd list-tables
 uv run dhd insert sales data/sales_new.csv          # --mode append|overwrite
+uv run dhd query "SELECT * FROM sales"
 ```
 
 `dhd` reads `FLIGHT_SERVER_HOST` / `FLIGHT_SERVER_PORT` (default `localhost:8815`).
 If the server isn't running it fails with a clear message rather than hanging.
 `dhd branch …` is a placeholder until Nessie lands (ADR-0002 / Phase 3).
-
-> ⚠️ **`dhd query` on the default `flight` engine currently crashes** (native
-> segfault deserializing the schema xorq sends back over Flight — see
-> [Known gaps](#-known-gaps)). `create-table`/`list-tables`/`insert` are fine; for
-> `query`, use `--engine pyiceberg` below until it's fixed upstream.
 
 #### Engines: `--engine flight` (default) vs `--engine pyiceberg`
 
@@ -246,10 +242,6 @@ working path today.
 
 ## ⚠️ Known gaps
 
-- **`dhd query` (default `flight` engine) segfaults.** xorq 0.2.4 cloudpickles an
-  ibis `Schema` inside the Flight response; unpickling it recurses into a native
-  stack overflow. `create-table` / `list-tables` / `insert` are unaffected.
-  Workaround: `--engine pyiceberg` for anything that reads data back.
 - **Trino doesn't start**, and has no catalog shared with the rest of the stack
   even when it does — see the BI section above.
 - `config/trino/etc/catalog/iceberg.properties` hardcodes MinIO credentials —
