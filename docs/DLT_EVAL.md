@@ -196,6 +196,82 @@ aujourd'hui -- fragmentation, pas concurrence) et une alternative proposée
 servi à supprimer la table `synthetic_100k_flight` que ce test avait
 laissée dans l'entrepôt MinIO partagé du conteneur.
 
+## 6. `batch_rows` en production (fix/ingest-batching-grpc, part A)
+
+Les sections 4-5 ci-dessus mesuraient un `iceberg_table.append()`
+**pyiceberg direct**, sans passer par Flight. `batch_rows` est maintenant
+câblé dans `ingestion.engine.dlt_engine` (chaque lot devient son propre
+commit, un par appel à `sink.write`, *jamais* pour `replace` -- voir
+`ingestion/sinks/base.py`). Remesuré ici avec le **vrai chemin de
+production** (`DltIngestor.run()` -> `FlightSink` -> `do_put` -> vrai
+`HybridBackend` en mémoire, serveur Flight in-process sur un port local,
+même technique que `tests/conftest.py::flight_server`, pas de mock) :
+même table synthétique que la section 4 (`id: int64`, `name: string`,
+`amount: float64`, `flag: bool`), 10M lignes, `write_disposition:
+append`, RSS pic échantillonné par `psutil` toutes les 50ms, chaque
+scénario lancé dans un processus `python` neuf (`scripts/spikes/` --
+non, ce script n'est pas commité, voir ci-dessous) pour une mesure
+RSS propre.
+
+| `batch_rows` | Lots | Total | RSS pic | Commits |
+|---|---|---|---|---|
+| `null` (désactivé) | 1 | 14.880s | 1138.7 MiB | 1 |
+| `500_000` | 20 | 20.179s | 1511.7 MiB | 20 |
+
+**Résultat inattendu, vérifié, qui inverse la conclusion de la section
+4 : `batch_rows` est ici *plus lent et consomme plus de mémoire*, pas
+moins -- 20 commits coûtent plus cher que 1, dans ce chemin précis.**
+Root cause identifiée en lisant `flight_server/app/backends/
+hybrid_backend.py` (code serveur xorq/HybridBackend, non modifié,
+conformément à la consigne) : `create_table`/`insert` appellent, à
+*chaque* écriture, sans condition :
+
+1. `_reflect_views()` (ligne ~236-241) : relit **la table entière**
+   depuis Iceberg (`iceberg_table.scan().to_arrow()`) pour la
+   réenregistrer comme vue DuckDB -- pas seulement le lot qui vient
+   d'être écrit.
+2. `_create_snapshot()` : `CHECKPOINT` puis `EXPORT DATABASE ... (FORMAT
+   PARQUET)` -- un export complet de la base DuckDB entière sur disque.
+
+Avec 1 commit, ce coût (relire + exporter ~10M lignes) n'est payé
+qu'une fois. Avec 20 commits sur une table qui grossit de 500k lignes à
+chaque lot, ce même travail -- proportionnel à la taille *courante* de
+la table, pas à la taille du lot -- est payé 20 fois sur une table de
+taille croissante, confirmé par la trace RSS (croissance quasi-linéaire
+et monotone pendant toute la durée du run, jamais de redescente entre
+deux lots -- pas en dents de scie comme on l'attendrait si la mémoire
+du lot précédent était libérée) :
+
+```
+t= 0.0s  rss= 239.8 MiB      (baseline)
+t= 1.0s  rss= 457.0 MiB
+t= 3.1s  rss= 696.7 MiB
+t= 6.2s  rss=1130.1 MiB
+t=11.3s  rss=1492.7 MiB      (dernier lot)
+```
+
+**Pas une régression de ce correctif** -- `_reflect_views`/
+`_create_snapshot` tournent déjà après *chaque* `create_table`/`insert`
+aujourd'hui, avec ou sans `batch_rows` ; brancher `batch_rows` ne fait
+qu'augmenter le nombre d'écritures par run, donc le nombre de fois où
+ce coût déjà existant est payé. Avant ce correctif, une source ne
+pouvait de toute façon committer qu'une fois par table par run -- ce
+coût n'était donc jamais multiplié.
+
+**Conséquence pratique pour le choix de `batch_rows` :** préférer peu
+de lots gros (ou désactiver `batch_rows` -- `null`) tant que
+`HybridBackend` reflète/snapshotte sur *chaque* écriture plutôt que sur
+le run entier. Le gain mémoire théorique d'Arrow (section 4 : -60% en
+pyiceberg direct) reste réel côté *client*, mais est aujourd'hui dominé
+côté *serveur* par ce coût à chaque commit dès qu'il y a plus de
+quelques lots. Proposé, non appliqué (hors périmètre -- interdiction de
+toucher `HybridBackend`) : ne reflex/snapshotter qu'après le *dernier*
+lot d'un run, ou rendre ces deux opérations asynchrones/différées.
+
+Script de mesure non commité (one-off, dans le répertoire scratch de la
+session, pas dans le dépôt) ; commande et méthode reproductibles
+ci-dessus si besoin de la relancer.
+
 ## Non vérifié
 
 - SQL Server (`mssql_chinook`) : toujours scaffolded, jamais lancé (voir
@@ -212,6 +288,14 @@ laissée dans l'entrepôt MinIO partagé du conteneur.
   (testé seulement avec `replace`/`append` en pratique ici ; couvert en
   unitaire pour `merge` dans `tests/test_ingest_dlt.py`, mais pas rejoué
   ici contre une vraie source Postgres élargie).
+- `batch_rows` (section 6) : le test d'interruption réel (kill -9 d'un
+  processus) à 10M lignes -- seul un échec simulé (sink.write qui lève)
+  a été testé, pas un vrai process tué entre deux lots sur ce volume.
+  `write_disposition: merge` à 10M lignes avec `batch_rows` n'a pas été
+  mesuré pour la mémoire/durée (seul `append` l'a été ci-dessus) ; le
+  coût `_reflect_views`/`_create_snapshot` par commit s'y applique
+  probablement de la même façon mais ce n'est pas vérifié. Pas d'autre
+  valeur de `batch_rows` que 500 000 et `null` essayée.
 
 ## Décision recommandée
 
