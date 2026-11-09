@@ -38,6 +38,18 @@ from ingestion.sinks.flight_sink import FlightSink
 
 DEFAULT_WORK_DIR = Path(__file__).resolve().parent.parent / "_pipeline_data"
 
+# fix/ingest-batching-grpc, part B: xorq's do_put doesn't bound its error
+# messages the way do_exchange does (xorq/flight/server.py's
+# bounded_status) -- a server-side exception whose message+traceback
+# exceeds gRPC's status-metadata budget (~4KB on the wire) reaches the
+# client as this exact, stable gRPC-level message instead of the real
+# Python exception. Reproduced live (docs/DLT_EVAL.md's part B section)
+# via a genuine schema mismatch across many columns; not something this
+# project's code can fix (xorq is a third-party dependency) -- caught
+# below so it at least becomes an actionable, logged SinkError instead of
+# an opaque crash.
+_GRPC_METADATA_OVERFLOW_MARKER = "metadata size exceeds limit"
+
 
 class ConnectorError(RuntimeError):
     """Wraps any connector-level failure with the source name attached."""
@@ -174,9 +186,26 @@ class DltIngestor:
     ) -> str:
         if table_name in sink.list_tables() and source.schema_contract:
             data = sink.apply_schema_contract(table_name, data, source.schema_contract)
-        return sink.write(
-            table_name,
-            data,
-            write_disposition=source.write_disposition,
-            primary_key=source.primary_key,
-        )
+        try:
+            return sink.write(
+                table_name,
+                data,
+                write_disposition=source.write_disposition,
+                primary_key=source.primary_key,
+            )
+        except pa.lib.ArrowException as exc:
+            if _GRPC_METADATA_OVERFLOW_MARKER in str(exc):
+                raise SinkError(
+                    f"'{table_name}': the Flight server rejected this write "
+                    f"with a gRPC 'metadata size exceeds limit' error -- the "
+                    f"real server-side exception was too large to fit gRPC's "
+                    f"status-metadata budget and was replaced by this opaque "
+                    f"one (grpc_status=8 RESOURCE_EXHAUSTED). Likely cause: a "
+                    f"schema mismatch across many columns, or another error "
+                    f"whose message+traceback exceeds ~4KB. Check the Flight "
+                    f"server's own logs for the actual exception -- it is "
+                    f"never sent to the client for this RPC (xorq's do_put "
+                    f"doesn't bound its error messages the way do_exchange "
+                    f"does; see xorq/flight/server.py's bounded_status)."
+                ) from exc
+            raise
