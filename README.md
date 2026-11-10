@@ -109,7 +109,7 @@ same stack as a dev environment.
 clean (verified 2026-11-08: full `--build` from a cold image cache took ~4
 minutes; `minio`, `xorq-service` and `flight-server` report healthy within
 ~15s of starting, `xorq-admin` within ~30s). `trino` does not — see
-[Known gaps](#-known-gaps) and the [Docker quick start](#-démarrage-rapide-docker)
+[Known gaps](#-known-gaps) and the [Docker quick start](#-docker-quick-start)
 below for the exact error.
 
 ### 5. Ingest and query with the `dhd` CLI
@@ -148,7 +148,7 @@ uv run dhd ingest run sqlite_chinook
 > below). A mismatch used to segfault `dhd create-table`/`dhd query`; `dhd`
 > now detects it itself and refuses cleanly before sending anything.
 
-#### 🐳 Démarrage rapide (Docker)
+#### 🐳 Docker Quick Start
 
 Verified end to end on 2026-11-08, Docker Desktop 29.6.2 / Compose v5.3.1, against
 a cold image cache:
@@ -357,30 +357,29 @@ separate from a running Flight server's catalog — fine for the single-user mod
 does not read `.env` itself, so pass `ICEBERG_*` / `S3_*` / `AWS_*` in the
 environment.
 
-## 🪟 Commandes sans make
+## 🪟 Commands without make
 
-`make` n'est pas installé sur cette machine (Windows, Git Bash sans `make` sur
-le `PATH`). Les commandes ci-dessous sont les équivalents exacts de chaque
-cible utile du `Makefile`, vérifiés sur cette machine ; elles sont toutes de
-simples alias `uv run …` / `docker compose …` que `make` appelle déjà, donc
-aucune n'a demandé de nouvel outil de tâches.
+`make` is not installed on this machine (Windows, Git Bash without `make` on
+the `PATH`). The commands below are the exact equivalents of every useful
+`Makefile` target, verified on this machine; they are all simple
+`uv run …` / `docker compose …` aliases that `make` already calls, so none of
+them required a new task-runner tool.
 
-| Cible `make`  | Équivalent vérifié |
+| `make` target  | Verified equivalent |
 |---------------|---------------------|
 | `make sync`   | `uv sync --frozen` |
 | `make test`   | `uv run pytest --cov=flight_server --cov=scripts --cov=datahut_duckhouse --cov-report=term-missing` |
-| `make lint`   | `uv run ruff check .` puis `uv run black --check .` puis `uv run mypy flight_server scripts datahut_duckhouse` |
-| `make format` | `uv run ruff check . --fix` puis `uv run black .` |
-| `make docker-up` | `docker compose up -d` (après `cp .devcontainer/.env.example .env` si `.env` n'existe pas encore — c'est ce que fait la dépendance `env` de cette cible) |
+| `make lint`   | `uv run ruff check .` then `uv run black --check .` then `uv run mypy flight_server scripts datahut_duckhouse` |
+| `make format` | `uv run ruff check . --fix` then `uv run black .` |
+| `make docker-up` | `docker compose up -d` (after `cp .devcontainer/.env.example .env` if `.env` doesn't exist yet — which is what this target's `env` dependency does) |
 | `make docker-down` | `docker compose down` |
 | `make docker-logs` | `docker compose logs -f` |
 
-Toutes les autres cibles du `Makefile` (`docker-build`, `docker-restart`,
-`create-tenant`, `dbt-run-dev`, `query-trino-list`, etc.) sont aussi de
-simples alias `$(UV) run …` / `$(COMPOSE) …` — il suffit de lire la ligne
-correspondante dans le [`Makefile`](Makefile) et de lancer la commande qu'elle
-appelle directement ; aucune n'a d'équivalent qui ne soit pas déjà un simple
-alias.
+Every other `Makefile` target (`docker-build`, `docker-restart`,
+`create-tenant`, `dbt-run-dev`, `query-trino-list`, etc.) is also a simple
+`$(UV) run …` / `$(COMPOSE) …` alias — just read the corresponding line in the
+[`Makefile`](Makefile) and run the command it calls directly; none of them has
+an equivalent that isn't already a simple alias.
 
 ## 📂 Project Structure
 
@@ -463,62 +462,61 @@ uv run dbt test --profiles-dir config --target dev  # a few tests still fail, se
 uv run python scripts/query_duckdb.py
 ```
 
-## 🧪 Banc d'essai multi-moteurs (Vague 1)
+## 🧪 Multi-engine Test Bench (Wave 1)
 
-Preuve que la même base (Chinook, base de démonstration d'une boutique de
-musique) s'ingère correctement depuis plusieurs moteurs SQL avec
-[dlt](https://dlthub.com/), et mesure du coût des écritures Iceberg. Les
-données AYITISTATS ne sont pas encore branchées — c'est la suite prévue, une
-fois ce harnais vérifié sur un jeu de données neutre.
+Proof that the same database (Chinook, a music-store demo dataset) ingests
+correctly from multiple SQL engines with [dlt](https://dlthub.com/), plus a
+measurement of Iceberg write cost. The AYITISTATS data isn't wired in yet —
+that's the planned next step, once this harness is verified on a neutral
+dataset.
 
-### Moteurs vérifiés / non vérifiés
+### Engines verified / not verified
 
-| Moteur | Statut |
+| Engine | Status |
 |---|---|
-| SQLite | ✅ Vérifié — démo en une commande, aucun Docker requis |
-| PostgreSQL | ✅ Vérifié — `docker-compose.test.yml`, 10/10 tests d'intégration passent |
-| MySQL | ✅ Vérifié — `docker-compose.test.yml`, 10/10 tests d'intégration passent |
-| SQL Server | ⚠️ **Non vérifié** — service scaffoldé derrière le profil compose optionnel `mssql` (image x86_64 uniquement, démarrage plus lourd), jamais démarré ni testé dans cette session. Voir [tests/docker/chinook/README.md](tests/docker/chinook/README.md). |
+| SQLite | ✅ Verified — one-command demo, no Docker required |
+| PostgreSQL | ✅ Verified — `docker-compose.test.yml`, 10/10 integration tests pass |
+| MySQL | ✅ Verified — `docker-compose.test.yml`, 10/10 integration tests pass |
+| SQL Server | ⚠️ **Not verified** — scaffolded behind the optional `mssql` compose profile (x86_64-only image, heavier startup), never started or tested in this session. See [tests/docker/chinook/README.md](tests/docker/chinook/README.md). |
 
-### Commandes exactes
+### Exact commands
 
 ```bash
-# Dépendances dlt + pilotes (extra optionnel, pas dans les dépendances principales)
+# dlt dependencies + drivers (optional extra, not in the main dependencies)
 uv sync --extra ingest
 
-# Démo en une commande, SQLite seul, aucun Docker requis
+# One-command demo, SQLite only, no Docker required
 uv run python scripts/demo.py
 
-# Variante avec Docker (Postgres + MySQL) :
+# Variant with Docker (Postgres + MySQL):
 docker compose -f docker-compose.test.yml up -d
 uv run python scripts/demo.py --source pg_chinook
 uv run python scripts/demo.py --source mysql_chinook
 
-# Charger n'importe quelle source dans Iceberg (nécessite un serveur Flight
-# joignable : replace/append s'écrivent via lui, merge directement en
-# pyiceberg sous condition -- voir docs/INGESTION.md, "single writer").
-# Le registre couvre 3 familles (sql/files/rest) :
+# Load any source into Iceberg (needs a reachable Flight server:
+# replace/append write through it, merge writes directly via pyiceberg
+# under condition -- see docs/INGESTION.md, "single writer").
+# The registry covers 3 families (sql/files/rest):
 uv run dhd ingest list
-uv run dhd ingest run sqlite_chinook   # ou --all, ou --dry-run
+uv run dhd ingest run sqlite_chinook   # or --all, or --dry-run
 
-# Tests d'intégration réels (besoin du stack Docker + du fichier SQLite) :
+# Real integration tests (needs the Docker stack + the SQLite file):
 uv run python scripts/fetch_chinook.py
 uv run pytest -m integration
 
-# Coût des écritures Iceberg (local puis MinIO) :
+# Iceberg write cost (local then MinIO):
 uv run python scripts/bench_writes.py --sizes 100000 1000000 --minio
 ```
 
-### Limites
+### Limitations
 
-Chinook est **petit** : ~15 000 lignes au total sur 11 tables. Ce banc
-d'essai valide la **justesse** (mêmes lignes, mêmes types, même résultat de
-jointure quel que soit le moteur source) et le **coût relatif par commit**
-(mesuré avec un jeu synthétique de 100k/1M lignes, voir
-[docs/DOGFOOD.md](docs/DOGFOOD.md)) — **pas** la performance à l'échelle
-réelle, pas le comportement multi-writer, et pas SQL Server. Les chiffres
-bruts, les frictions rencontrées, et les questions encore ouvertes sont
-dans [docs/DOGFOOD.md](docs/DOGFOOD.md).
+Chinook is **small**: ~15,000 rows total across 11 tables. This test bench
+validates **correctness** (same rows, same types, same join result regardless
+of the source engine) and **relative cost per commit** (measured with a
+synthetic 100k/1M-row dataset, see [docs/DOGFOOD.md](docs/DOGFOOD.md)) — **not**
+real-world performance at scale, not multi-writer behavior, and not SQL
+Server. The raw numbers, friction points encountered, and still-open
+questions are in [docs/DOGFOOD.md](docs/DOGFOOD.md).
 
 ## 🏢 Multi-tenancy — planned, not provided
 
@@ -549,7 +547,7 @@ yet. Concretely, as of this writing:
 **Not functional yet.** `trino` currently fails to start — config in
 `config/trino/etc/` predates Trino 483's config format (41 rejected
 configuration properties; exact error in
-[Démarrage rapide (Docker)](#-démarrage-rapide-docker)) — and even once it
+[Docker Quick Start](#-docker-quick-start)) — and even once it
 starts, it has no catalog shared with the Iceberg tables `dhd`/`HybridBackend`
 write — that needs [ADR-0002](docs/adr/0002-iceberg-catalog-nessie.md)
 (Nessie). Treat `docker-compose.yml`'s `trino` service and
@@ -560,7 +558,7 @@ for that future work, not a working path today.
 
 - **Trino doesn't start** (41 rejected config properties on Trino 483), and
   has no catalog shared with the rest of the stack even when it does — see
-  the BI section above and [Démarrage rapide (Docker)](#-démarrage-rapide-docker).
+  the BI section above and [Docker Quick Start](#-docker-quick-start).
 - **The Flight client and server must be on the same Python minor version**
   (upstream `cloudpickle`/xorq fragility, not fixed in this repo) — see
   [the Python-version matrix](#-python-version-matrix-client-and-server-must-match)
