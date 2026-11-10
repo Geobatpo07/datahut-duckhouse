@@ -29,7 +29,7 @@ import pytest
 from ingestion.config.models import SourceConfig
 from ingestion.engine import dlt_engine as dlt_engine_module
 from ingestion.engine.dlt_engine import ConnectorError, DltIngestor
-from ingestion.sinks.base import SchemaContractViolationError
+from ingestion.sinks.base import SchemaContractViolationError, SinkError
 from ingestion.sinks.catalog_guard import CatalogMismatchError
 
 
@@ -156,6 +156,142 @@ class TestWriteDispositionDispatch:
         assert by_id == {1: "a-updated", 2: "b", 3: "c"}
 
 
+class TestSinkRouting:
+    """ADR-0006, decision 5: sink routing now applies to every
+    write_disposition, not just merge. ``flight_server``'s own local
+    warehouse has nothing remote to be unreachable, so ``auto`` resolves
+    to ``direct`` here by default -- these tests make that explicit via
+    the run log, and force the opposite (flight) by making capacity
+    report "not possible"."""
+
+    def _logged_sink(self, table_name: str) -> dict:
+        from ingestion.runs.models import RUN_LOG_TABLE
+
+        rows = _rows_via_flight(RUN_LOG_TABLE)
+        row = next(r for r in reversed(rows) if r["table_name"] == table_name)
+        return {"sink": row["sink"], "sink_reason": row["sink_reason"]}
+
+    def test_auto_picks_direct_for_replace_when_capacity_allows(
+        self, flight_server, tmp_path, monkeypatch
+    ):
+        from datahut_duckhouse.connection import connect as flight_connect
+
+        source = _make_source(name="s", write_disposition="replace", sink="auto")
+        t1 = pa.table({"id": [1], "name": ["a"]})
+        engine = _engine(
+            flight_connect(), monkeypatch, {"s_t": _write_parquet(tmp_path, "sr0", t1)}
+        )
+        engine.run(source)
+
+        logged = self._logged_sink("s_t")
+        assert logged["sink"] == "direct"
+        assert "auto" in logged["sink_reason"]
+        rows = _rows_via_flight("s_t")
+        assert rows == [{"id": 1, "name": "a"}]
+
+    def test_explicit_direct_writes_append_direct(
+        self, flight_server, tmp_path, monkeypatch
+    ):
+        from datahut_duckhouse.connection import connect as flight_connect
+
+        source = _make_source(name="s", write_disposition="append", sink="direct")
+        t1 = pa.table({"id": [1], "name": ["a"]})
+        engine = _engine(
+            flight_connect(), monkeypatch, {"s_t": _write_parquet(tmp_path, "sd0", t1)}
+        )
+        engine.run(source)
+
+        logged = self._logged_sink("s_t")
+        assert logged["sink"] == "direct"
+        assert "explicit" in logged["sink_reason"]
+
+    def test_auto_falls_back_to_flight_when_direct_is_unreachable(
+        self, flight_server, tmp_path, monkeypatch
+    ):
+        from datahut_duckhouse.connection import connect as flight_connect
+        from ingestion.engine import dlt_engine as engine_module
+
+        monkeypatch.setattr(
+            engine_module.router,
+            "check_direct_capacity",
+            lambda: (False, "simulated: storage unreachable"),
+        )
+        source = _make_source(name="s", write_disposition="append", sink="auto")
+        t1 = pa.table({"id": [1], "name": ["a"]})
+        engine = _engine(
+            flight_connect(), monkeypatch, {"s_t": _write_parquet(tmp_path, "sf0", t1)}
+        )
+        engine.run(source)
+
+        logged = self._logged_sink("s_t")
+        assert logged["sink"] == "flight"
+        assert "simulated: storage unreachable" in logged["sink_reason"]
+
+    def test_direct_explicit_but_unreachable_raises_and_never_falls_back(
+        self, flight_server, tmp_path, monkeypatch
+    ):
+        from datahut_duckhouse.connection import connect as flight_connect
+        from ingestion.engine import dlt_engine as engine_module
+        from ingestion.sinks.router import DirectSinkUnavailableError
+
+        monkeypatch.setattr(
+            engine_module.router,
+            "check_direct_capacity",
+            lambda: (False, "simulated: catalog unreachable"),
+        )
+        source = _make_source(name="s", write_disposition="append", sink="direct")
+        t1 = pa.table({"id": [1], "name": ["a"]})
+        engine = _engine(
+            flight_connect(), monkeypatch, {"s_t": _write_parquet(tmp_path, "sx0", t1)}
+        )
+        with pytest.raises(DirectSinkUnavailableError, match="catalog unreachable"):
+            engine.run(source)
+
+    def test_flight_explicit_on_a_large_load_warns(
+        self, flight_server, tmp_path, monkeypatch
+    ):
+        from datahut_duckhouse.connection import connect as flight_connect
+
+        monkeypatch.setenv("DHD_SINK_WARN_ROWS", "2")
+        source = _make_source(name="s", write_disposition="append", sink="flight")
+        t1 = pa.table({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+        messages: list[str] = []
+        engine = DltIngestor(
+            flight_connect(),
+            lambda: None,
+            run_log_echo=messages.append,
+        )
+        monkeypatch.setattr(
+            dlt_engine_module.connector_registry,
+            "get",
+            lambda family: _fake_connector({"s_t": _write_parquet(tmp_path, "w0", t1)}),
+        )
+        engine.run(source)
+
+        assert any("faster at this scale" in m for m in messages)
+
+    def test_flight_explicit_for_merge_is_a_clean_sink_error(
+        self, flight_server, tmp_path, monkeypatch
+    ):
+        """FlightSink never learned 'merge' (no Flight action reaches
+        HybridBackend's upsert) -- an explicit --sink flight on a merge
+        source must fail clearly, not silently write something else."""
+        from datahut_duckhouse.connection import connect as flight_connect
+
+        source = _make_source(
+            name="s",
+            write_disposition="merge",
+            primary_key=["id"],
+            sink="flight",
+        )
+        t1 = pa.table({"id": [1], "name": ["a"]})
+        engine = _engine(
+            flight_connect(), monkeypatch, {"s_t": _write_parquet(tmp_path, "sm0", t1)}
+        )
+        with pytest.raises(SinkError, match="FlightSink cannot write"):
+            engine.run(source)
+
+
 class TestSchemaContract:
     def test_evolve_widens_the_table(self, flight_server, tmp_path, monkeypatch):
         from datahut_duckhouse.connection import connect as flight_connect
@@ -260,6 +396,26 @@ class TestRunLog:
         assert rows[0]["table_name"] == "s_t"
         assert rows[0]["status"] == "ok"
         assert rows[0]["rows"] == 1
+
+    def test_logs_the_resolved_sink_and_reason(
+        self, flight_server, tmp_path, monkeypatch
+    ):
+        """ADR-0006, decision 5: the run journal records which sink wrote
+        the table, and why."""
+        from datahut_duckhouse.connection import connect as flight_connect
+        from ingestion.runs.models import RUN_LOG_TABLE
+
+        source = _make_source(name="s", sink="flight")
+        t1 = pa.table({"id": [1], "name": ["a"]})
+        engine = _engine(
+            flight_connect(), monkeypatch, {"s_t": _write_parquet(tmp_path, "lsk0", t1)}
+        )
+        engine.run(source)
+
+        rows = _rows_via_flight(RUN_LOG_TABLE)
+        row = next(r for r in rows if r["table_name"] == "s_t")
+        assert row["sink"] == "flight"
+        assert "explicit" in row["sink_reason"]
 
     def test_failed_table_is_logged_with_error(
         self, flight_server, tmp_path, monkeypatch

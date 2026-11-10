@@ -31,10 +31,12 @@ from ingestion.connectors import registry as connector_registry
 from ingestion.connectors.sql import MissingDriverError
 from ingestion.engine.base import RunResult, TableResult
 from ingestion.runs.store import RunLog
+from ingestion.sinks import router
 from ingestion.sinks.base import SchemaContractViolationError, SinkError
 from ingestion.sinks.catalog_guard import CatalogMismatchError
 from ingestion.sinks.direct_sink import DirectSink
 from ingestion.sinks.flight_sink import FlightSink
+from ingestion.sinks.router import DirectSinkUnavailableError, UnknownSinkError
 
 DEFAULT_WORK_DIR = Path(__file__).resolve().parent.parent / "_pipeline_data"
 
@@ -72,24 +74,33 @@ class DltIngestor:
         self._flight_sink = FlightSink(flight_backend)
         self._direct_sink: DirectSink | None = None
 
-    def _sink_for(self, source: SourceConfig):
-        """``DirectSink`` is built lazily, once per engine instance (not per
-        source): building it runs the catalog-identity guard, a network
-        round trip worth paying at most once per run."""
-        if source.write_disposition != "merge":
-            return self._flight_sink
+    def _sink_for(self, source: SourceConfig) -> tuple[object, str, str]:
+        """Resolves which sink this source uses (ADR-0006, decision 5),
+        fresh per source (``source.sink`` is per-source config) --
+        ``DirectSink`` itself is still built lazily, once per engine
+        instance (not per source): building it runs the catalog-identity
+        guard, a network round trip worth paying at most once per run.
+        Returns ``(sink, sink_name, sink_reason)``.
+        """
+        sink_name, sink_reason = router.resolve_sink(source.sink)
+        if sink_name == "flight":
+            return self._flight_sink, sink_name, sink_reason
         if self._direct_sink is None:
             pyiceberg_engine = self._pyiceberg_connect()
             self._direct_sink = DirectSink(pyiceberg_engine, self.flight_backend)
-        return self._direct_sink
+        return self._direct_sink, sink_name, sink_reason
 
     def run(self, source: SourceConfig) -> RunResult:
         t0 = time.time()
         connector = connector_registry.get(source.family)
 
         try:
-            sink = self._sink_for(source)
-        except CatalogMismatchError as exc:
+            sink, sink_name, sink_reason = self._sink_for(source)
+        except (
+            CatalogMismatchError,
+            DirectSinkUnavailableError,
+            UnknownSinkError,
+        ) as exc:
             message = source.redact(str(exc))
             self.run_log.record(source.name, "*", t0, time.time(), 0, "error", message)
             raise type(exc)(message) from exc
@@ -101,7 +112,17 @@ class DltIngestor:
             # ...), not run failures -- the caller (ingestion/cli.py) maps
             # them to exit code 2, not 1. Still logged, still redacted.
             message = source.redact(str(exc))
-            self.run_log.record(source.name, "*", t0, time.time(), 0, "error", message)
+            self.run_log.record(
+                source.name,
+                "*",
+                t0,
+                time.time(),
+                0,
+                "error",
+                message,
+                sink=sink_name,
+                sink_reason=sink_reason,
+            )
             raise type(exc)(message) from exc
         except Exception as exc:  # noqa: BLE001 - attach the source name, re-raise
             message = source.redact(
@@ -109,15 +130,32 @@ class DltIngestor:
                 f"Action: check {source.secret_ref or 'the source'}'s "
                 f"connectivity/config, then retry."
             )
-            self.run_log.record(source.name, "*", t0, time.time(), 0, "error", message)
+            self.run_log.record(
+                source.name,
+                "*",
+                t0,
+                time.time(),
+                0,
+                "error",
+                message,
+                sink=sink_name,
+                sink_reason=sink_reason,
+            )
             raise ConnectorError(message) from exc
+
+        if source.sink == "flight":
+            for parquet_path in written.values():
+                estimated = papq.ParquetFile(parquet_path).metadata.num_rows
+                warning = router.flight_size_warning(estimated)
+                if warning:
+                    self._echo(f"warning: '{source.name}': {warning}")
 
         result = RunResult(source=source.name)
         for table_name, parquet_path in written.items():
             table_t0 = time.time()
             try:
                 verb, rows_written, commits = self._write_table(
-                    sink, source, table_name, parquet_path
+                    sink, source, table_name, parquet_path, sink_name
                 )
             except (SchemaContractViolationError, SinkError) as exc:
                 message = source.redact(
@@ -126,11 +164,21 @@ class DltIngestor:
                     f"this source in sources.yml."
                 )
                 self.run_log.record(
-                    source.name, table_name, table_t0, time.time(), 0, "error", message
+                    source.name,
+                    table_name,
+                    table_t0,
+                    time.time(),
+                    0,
+                    "error",
+                    message,
+                    sink=sink_name,
+                    sink_reason=sink_reason,
                 )
                 raise type(exc)(message) from exc
             result.tables.append(
-                TableResult(table=table_name, verb=verb, rows=rows_written, commits=commits)
+                TableResult(
+                    table=table_name, verb=verb, rows=rows_written, commits=commits
+                )
             )
             self.run_log.record(
                 source.name,
@@ -140,20 +188,27 @@ class DltIngestor:
                 rows_written,
                 "ok",
                 commits=commits,
+                sink=sink_name,
+                sink_reason=sink_reason,
             )
         return result
 
     def _write_table(
-        self, sink, source: SourceConfig, table_name: str, parquet_path: Path
+        self,
+        sink,
+        source: SourceConfig,
+        table_name: str,
+        parquet_path: Path,
+        sink_name: str,
     ) -> tuple[str, int, int]:
         """Writes one table's Parquet file through ``sink``, in
-        ``source.batch_rows``-sized Arrow batches for ``append``/``merge``
-        (one commit per batch) -- never for ``replace``, which always
-        forces a single commit regardless of ``batch_rows`` (see
-        ``ingestion/sinks/base.py``'s docstring for why). Returns ``(verb,
-        rows_written, commits)``.
+        ``source.effective_batch_rows(sink_name)``-sized Arrow batches for
+        ``append``/``merge`` (one commit per batch) -- never for
+        ``replace``, which always forces a single commit regardless of
+        ``batch_rows`` (see ``ingestion/sinks/base.py``'s docstring for
+        why). Returns ``(verb, rows_written, commits)``.
         """
-        batch_rows = source.batch_rows
+        batch_rows = source.effective_batch_rows(sink_name)
         if source.write_disposition == "replace":
             if batch_rows is not None:
                 self._echo(

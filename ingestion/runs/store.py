@@ -143,7 +143,8 @@ class RunLog:
                 "CREATE TABLE IF NOT EXISTS ingest_runs ("
                 "run_id TEXT, source TEXT, table_name TEXT, started_at TEXT, "
                 "finished_at TEXT, duration_s REAL, rows INTEGER, "
-                "commits INTEGER, status TEXT, error TEXT)"
+                "commits INTEGER, status TEXT, error TEXT, "
+                "sink TEXT, sink_reason TEXT)"
             )
 
     def record(
@@ -156,6 +157,8 @@ class RunLog:
         status: str,
         error: str | None = None,
         commits: int = 1,
+        sink: str | None = None,
+        sink_reason: str | None = None,
     ) -> None:
         row = {
             "run_id": self.run_id,
@@ -168,6 +171,8 @@ class RunLog:
             "commits": commits,
             "status": status,
             "error": _bounded_error(error),
+            "sink": sink,
+            "sink_reason": sink_reason,
         }
         if not self._use_sqlite:
             try:
@@ -183,7 +188,7 @@ class RunLog:
                 )
         with sqlite3.connect(_fallback_db()) as conn:
             conn.execute(
-                "INSERT INTO ingest_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO ingest_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     row["run_id"],
                     row["source"],
@@ -195,5 +200,7 @@ class RunLog:
                     row["commits"],
                     row["status"],
                     row["error"],
+                    row["sink"],
+                    row["sink_reason"],
                 ),
             )

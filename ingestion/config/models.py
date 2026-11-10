@@ -53,6 +53,12 @@ class SourceConfig(BaseModel):
     incremental: IncrementalConfig | None = None
     write_disposition: Literal["append", "merge", "replace"] = "replace"
     primary_key: list[str] | None = None
+    # Which sink writes this source's tables (ADR-0006, decision 5):
+    # "auto" (default) picks direct whenever this process can reach the
+    # catalog/storage directly, flight otherwise, with no size threshold
+    # (docs/spikes/NESSIE_SPIKES_2.md, T6 found no crossover point).
+    # Overridable per run with `dhd ingest run --sink`.
+    sink: Literal["auto", "flight", "direct"] = "auto"
     schema_contract: Literal["evolve", "freeze", "discard_value"] = "evolve"
     target_prefix: str | None = None
     # How many rows per Iceberg commit when the engine streams a table in
@@ -92,6 +98,23 @@ class SourceConfig(BaseModel):
     @property
     def prefix(self) -> str:
         return self.target_prefix or self.name
+
+    def effective_batch_rows(self, resolved_sink: str) -> int | None:
+        """``batch_rows``, defaulted by the *resolved* sink (ADR-0006,
+        decision 5) when this source didn't set it explicitly in
+        ``sources.yml``. Flight's cost grows with the whole re-exported
+        DuckDB database, so batching only adds more of that same cost per
+        run (docs/DLT_EVAL.md, section 6) -- its default is a single
+        commit. Direct keeps the existing 500,000 default (same
+        measurement). An explicit ``batch_rows`` (including an explicit
+        ``null``, "disable chunking") always wins, regardless of sink --
+        checked via ``model_fields_set``, not ``self.batch_rows``'s value,
+        so an explicit ``batch_rows: 500000`` is distinguishable from
+        never having set it at all.
+        """
+        if "batch_rows" in self.model_fields_set:
+            return self.batch_rows
+        return 500_000 if resolved_sink == "direct" else None
 
     def redact(self, message: str) -> str:
         """Strip this source's secret *value* (never logged by name --

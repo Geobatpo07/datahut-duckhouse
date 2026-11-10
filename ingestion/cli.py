@@ -118,6 +118,15 @@ def ingest_group() -> None:
     help="With --all, stop at the first failed source instead of "
     "running the rest and reporting a summary.",
 )
+@click.option(
+    "--sink",
+    "sink_override",
+    type=click.Choice(("auto", "flight", "direct")),
+    default=None,
+    help="Override this source's sink (ADR-0006, decision 5). 'direct' "
+    "exits 2 if a direct write isn't possible from this process -- "
+    "never a silent fallback to flight.",
+)
 def ingest_run(
     source_name: str | None,
     run_all: bool,
@@ -127,6 +136,7 @@ def ingest_run(
     full_refresh: bool,
     yes: bool,
     fail_fast: bool,
+    sink_override: str | None,
 ) -> None:
     """Run SOURCE_NAME, or every source with --all."""
     if bool(source_name) == run_all:
@@ -182,11 +192,14 @@ def ingest_run(
                 run_log_echo=lambda msg: click.echo(msg, err=True),
                 tables=list(tables) or None,
                 full_refresh=full_refresh,
+                sink=sink_override,
             )
         except (
             ingestion.CatalogMismatchError,
             ingestion.MissingDriverError,
             ingestion.SourcesConfigError,
+            ingestion.DirectSinkUnavailableError,
+            ingestion.UnknownSinkError,
         ) as exc:
             failures[name] = str(exc)
             if not run_all or fail_fast:
