@@ -150,10 +150,22 @@ ingestion.cli.configure(connect, _pyiceberg_connect)
     "'pyiceberg' talks straight to Iceberg on MinIO, serverless and xorq-free. "
     "Env: DHD_ENGINE. Default: flight.",
 )
+@click.option(
+    "--branch",
+    "branch_override",
+    default=None,
+    help="Nessie reference for this invocation (ADR-0006, decision 3). Only "
+    "affects the 'pyiceberg' engine and the branch/merge/tag/rollback "
+    "commands -- the 'flight' engine reads the running Flight server's own "
+    "ICEBERG_BRANCH, fixed at the server's startup, not per client call. "
+    "Env: ICEBERG_BRANCH. Default: main.",
+)
 @click.pass_context
-def cli(ctx: click.Context, engine: str | None) -> None:
+def cli(ctx: click.Context, engine: str | None, branch_override: str | None) -> None:
     """DataHut-DuckHouse CLI - drive the Flight server (Iceberg + DuckDB)."""
     ctx.obj = {"engine": engine}
+    if branch_override:
+        os.environ["ICEBERG_BRANCH"] = branch_override
 
 
 cli.add_command(ingestion.cli.ingest_group)
@@ -425,36 +437,140 @@ def sources_list() -> None:
         click.echo("  ".join(v.ljust(w) for v, w in zip(row, widths, strict=True)))
 
 
+def _versioning_or_die(fn, *args, **kwargs):
+    """Runs a ``iceberg_catalog.versioning`` call, turning its errors into
+    a clean exit-2 ``click.ClickException`` -- ``VersioningUnavailableError``
+    in solo mode, any other ``NessieApiError`` otherwise. Callers that need
+    special handling of one specific error (``dhd merge``'s
+    ``MergeConflictError``) catch it themselves, before this fallback."""
+    from iceberg_catalog.factory import VersioningUnavailableError
+    from iceberg_catalog.versioning import NessieApiError
+
+    try:
+        return fn(*args, **kwargs)
+    except VersioningUnavailableError as exc:
+        raise _ConfigClickException(str(exc)) from exc
+    except NessieApiError as exc:
+        raise _ConfigClickException(str(exc)) from exc
+
+
 @cli.group()
 def branch() -> None:
-    """Nessie-style catalog branching - NOT active yet (ADR-0002, roadmap Phase 3)."""
-
-
-_NESSIE_MSG = (
-    "Branching is not wired yet. It needs the Nessie catalog (ADR-0002), which "
-    "is roadmap Phase 3 - the server currently uses an embedded SQL catalog with "
-    "no branch model. This command is a placeholder so the CLI surface is stable."
-)
+    """Nessie branch management (ADR-0006, decision 4). Needs deployment
+    mode (ICEBERG_CATALOG_TYPE=rest) -- solo mode has no reference model
+    to branch."""
 
 
 @branch.command("create")
 @click.argument("name")
-def branch_create(name: str) -> None:
-    """(stub) Create a catalog branch."""
-    raise click.ClickException(_NESSIE_MSG)
+@click.option(
+    "--from",
+    "from_branch",
+    default=None,
+    help="Source branch. Default: --branch/ICEBERG_BRANCH, or 'main'.",
+)
+def branch_create(name: str, from_branch: str | None) -> None:
+    """Create branch NAME."""
+    from iceberg_catalog.versioning import create_branch
+
+    source = from_branch or os.getenv("ICEBERG_BRANCH", "main")
+    ref = _versioning_or_die(create_branch, name, from_branch=source)
+    click.echo(f"created branch '{ref.name}' @ {ref.hash} (from '{source}')")
 
 
 @branch.command("list")
 def branch_list() -> None:
-    """(stub) List catalog branches."""
-    raise click.ClickException(_NESSIE_MSG)
+    """List every branch and tag."""
+    from iceberg_catalog.versioning import list_references
+
+    refs = _versioning_or_die(list_references)
+    if not refs:
+        click.echo("(no references)")
+        return
+    for ref in refs:
+        click.echo(f"{ref.type:<6} {ref.name:<30} {ref.hash}")
 
 
-@branch.command("switch")
+@branch.command("delete")
 @click.argument("name")
-def branch_switch(name: str) -> None:
-    """(stub) Switch the working catalog branch."""
-    raise click.ClickException(_NESSIE_MSG)
+@click.option(
+    "--force", is_flag=True, help="Delete even if it has work not yet merged."
+)
+def branch_delete(name: str, force: bool) -> None:
+    """Delete branch NAME. Refuses if it has unmerged work unless --force."""
+    from iceberg_catalog.versioning import delete_branch
+
+    _versioning_or_die(delete_branch, name, force=force)
+    suffix = " (forced; its files are left in storage)" if force else ""
+    click.echo(f"deleted branch '{name}'{suffix}")
+
+
+@cli.command("merge")
+@click.argument("from_branch")
+@click.option(
+    "--into",
+    default=None,
+    help="Target branch. Default: --branch/ICEBERG_BRANCH, or 'main'.",
+)
+def merge_cmd(from_branch: str, into: str | None) -> None:
+    """Merge FROM_BRANCH into another branch (default: main).
+
+    Fails on any conflict -- lists the conflicting tables and never
+    applies an automatic resolution (ADR-0006, decision 4; Nessie's own
+    FORCE resolution overwrites instead of combining -- docs/spikes/
+    NESSIE_SPIKES_2.md, T3 -- so it is never used here)."""
+    from iceberg_catalog.factory import VersioningUnavailableError
+    from iceberg_catalog.versioning import MergeConflictError
+    from iceberg_catalog.versioning import merge as do_merge
+
+    target: str = into if into else os.getenv("ICEBERG_BRANCH", "main")
+    try:
+        do_merge(from_branch, into=target)
+    except VersioningUnavailableError as exc:
+        raise _ConfigClickException(str(exc)) from exc
+    except MergeConflictError as exc:
+        tables = ", ".join(exc.conflicting_keys) or "(see message)"
+        raise _ConfigClickException(
+            f"merge conflict: '{from_branch}' into '{target}' conflicts on: "
+            f"{tables}. No automatic resolution is applied -- resolve by "
+            f"hand, then merge again."
+        ) from exc
+    click.echo(f"merged '{from_branch}' into '{target}'")
+
+
+@cli.command("tag")
+@click.argument("name")
+@click.option(
+    "--from",
+    "from_branch",
+    default=None,
+    help="Source branch. Default: --branch/ICEBERG_BRANCH, or 'main'.",
+)
+def tag_cmd(name: str, from_branch: str | None) -> None:
+    """Create tag NAME."""
+    from iceberg_catalog.versioning import create_tag
+
+    source = from_branch or os.getenv("ICEBERG_BRANCH", "main")
+    ref = _versioning_or_die(create_tag, name, from_branch=source)
+    click.echo(f"created tag '{ref.name}' @ {ref.hash} (from '{source}')")
+
+
+@cli.command("rollback")
+@click.argument("to_hash")
+@click.option(
+    "--branch",
+    "branch_name",
+    default=None,
+    help="Branch to roll back. Default: --branch/ICEBERG_BRANCH, or 'main'.",
+)
+def rollback_cmd(to_hash: str, branch_name: str | None) -> None:
+    """Reassign a branch's HEAD to TO_HASH (an earlier commit on that
+    branch's own history)."""
+    from iceberg_catalog.versioning import rollback as do_rollback
+
+    target = branch_name or os.getenv("ICEBERG_BRANCH", "main")
+    _versioning_or_die(do_rollback, target, to_hash=to_hash)
+    click.echo(f"'{target}' rolled back to {to_hash}")
 
 
 def main() -> None:
