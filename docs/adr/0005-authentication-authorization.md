@@ -116,7 +116,7 @@ zero-trust network context.
 
 1. [ ] Add a `tenant_tokens` table to the Postgres schema from ADR-0003 (token hash,
        tenant ID, scope, created_at, revoked_at)
-2. [ ] Add token validation middleware to `xorq-service` (`xorq/api.py`)
+2. [ ] Add token validation middleware to `xorq-service` (`orchestrator/api.py`)
 3. [ ] Add token validation to the Flight server, reading the `authorization` call
        header before any request reaches `HybridBackend`
 4. [ ] Wire the resolved tenant ID into the namespace-boundary check from ADR-0004

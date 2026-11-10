@@ -7,9 +7,9 @@ import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from xorq.core import xorq_registry
+from orchestrator.core import xorq_registry
 
-logger = logging.getLogger("xorq.api")
+logger = logging.getLogger("orchestrator.api")
 
 app = FastAPI(title="DataHut XORQ Orchestration API")
 

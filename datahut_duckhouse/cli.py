@@ -20,6 +20,7 @@ import pyarrow.parquet as papq
 
 from datahut_duckhouse import __version__
 from datahut_duckhouse.connection import FlightUnavailableError, connect, flight_target
+from datahut_duckhouse.flight_version_guard import FlightPythonVersionMismatchError
 
 ENGINES = ("flight", "pyiceberg")
 
@@ -116,6 +117,8 @@ def _connect_or_die(ctx: click.Context):
                 raise click.ClickException(str(exc)) from exc
         return connect()
     except FlightUnavailableError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except FlightPythonVersionMismatchError as exc:
         raise click.ClickException(str(exc)) from exc
 
 
@@ -217,6 +220,37 @@ def query(ctx: click.Context, sql: str, limit: int | None, fmt: str) -> None:
     except Exception as exc:  # noqa: BLE001 - CLI: clean message, not a traceback
         raise click.ClickException(f"Query failed: {exc}") from exc
     _render(result, fmt)
+
+
+@cli.command("ingest-dlt")
+@click.option(
+    "--source",
+    "source_name",
+    default="all",
+    show_default=True,
+    help="Source name from ingestion/dlt/sources.yml, or 'all'.",
+)
+def ingest_dlt(source_name: str) -> None:
+    """Extract a dlt-configured source (Chinook, etc.) and load it into Iceberg.
+
+    Always uses the pyiceberg engine, independent of --engine/DHD_ENGINE:
+    this is a serverless batch load, so no Flight server is needed at all --
+    not a workaround for the flight engine (see README's Python-version
+    matrix section for the one thing that engine does need: a client and
+    server on the same Python minor version). Loads overwrite each table on
+    every run, so re-running this command never duplicates rows.
+    """
+    from datahut_duckhouse.ingest_dlt import IngestDltError, run_ingest_dlt
+
+    try:
+        results = run_ingest_dlt(source_name)
+    except IngestDltError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if not results:
+        click.echo("No tables extracted.")
+        return
+    for table, (verb, n) in sorted(results.items()):
+        click.echo(f"{verb.capitalize()} '{table}' - {n} rows.")
 
 
 @cli.group()

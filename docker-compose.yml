@@ -18,7 +18,7 @@ services:
     container_name: xorq-service
     <<: *common-env
     environment:
-      XORQ_STORAGE: ${XORQ_STORAGE:-xorq/metadata.db}
+      XORQ_STORAGE: ${XORQ_STORAGE:-orchestrator/metadata.db}
     ports:
       - "9980:9980"
     restart: unless-stopped
@@ -65,6 +65,12 @@ services:
     build:
       context: .
       dockerfile: .devcontainer/flight-server.Dockerfile
+      args:
+        # Matches .python-version; override to build/test the other side of
+        # the supported matrix (3.11, 3.13 -- see README) without touching
+        # the Dockerfile, e.g. `PYTHON_VERSION=3.11 docker compose build
+        # flight-server`.
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
     container_name: flight-server
     <<: *common-env
     ports:
