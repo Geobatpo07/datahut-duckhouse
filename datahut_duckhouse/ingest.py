@@ -105,38 +105,49 @@ class PyIcebergEngine:
     name = "pyiceberg"
 
     def __init__(self) -> None:
-        try:
-            from pyiceberg.catalog import load_catalog
-        except ImportError as exc:  # pragma: no cover - pyiceberg is a hard dep
-            raise IngestUnavailableError(f"pyiceberg not installed: {exc}") from exc
-
         import duckdb
 
+        from iceberg_catalog import CatalogUnavailableError, get_catalog
+
         self.namespace = os.getenv("ICEBERG_NAMESPACE", "default")
-        params = self._catalog_params()
+        warehouse, is_remote, meta_dir = self._resolve_identity()
+        self.is_remote = is_remote
+
+        catalog_type = os.getenv("ICEBERG_CATALOG_TYPE", "sql")
+        catalog_uri = _env("ICEBERG_CATALOG_URI") or (
+            f"sqlite:///{meta_dir.absolute().as_posix()}/pyiceberg_catalog.db"
+        )
+        # Exposed for catalog_guard.check_same_catalog: the identity that
+        # must match the Flight server's own (HybridBackend.uri /
+        # .warehouse_path) before a direct pyiceberg write is allowed.
+        self.uri = catalog_uri
+        self.warehouse_path = warehouse if self.is_remote else f"file://{warehouse}"
 
         try:
-            self.catalog = load_catalog(os.getenv("ICEBERG_CATALOG", "dhd"), **params)
-            existing = {n[0] for n in self.catalog.list_namespaces()}
-            if self.namespace not in existing:
-                self.catalog.create_namespace(self.namespace)
-        except IngestUnavailableError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - surface a clean CLI message
-            raise IngestUnavailableError(
-                f"Could not open the Iceberg catalog ({type(exc).__name__}: {exc}). "
-                f"Check ICEBERG_WAREHOUSE / S3_ENDPOINT / AWS_* and that MinIO is up."
-            ) from exc
+            self.catalog = get_catalog(
+                catalog_name=os.getenv("ICEBERG_CATALOG", "dhd"),
+                warehouse=warehouse,
+                is_remote=self.is_remote,
+                catalog_type=catalog_type,
+                catalog_uri=catalog_uri,
+                catalog_branch=_env("ICEBERG_BRANCH") or "main",
+                ensure_namespace=self.namespace,
+            )
+        except CatalogUnavailableError as exc:
+            raise IngestUnavailableError(str(exc)) from exc
 
         self._duck = duckdb.connect()
         self.con = self  # `dhd insert` calls backend.con.upload_table(...)
 
-    def _catalog_params(self) -> dict[str, str]:
-        """Build ``load_catalog`` kwargs from the same env vars the server reads."""
+    def _resolve_identity(self) -> tuple[str, bool, Path]:
+        """This engine's own warehouse/meta-dir identity, computed once so
+        ``self.uri``/``self.warehouse_path`` (read by ``catalog_guard``) stay
+        exactly as before -- ``get_catalog`` is told the result rather than
+        re-deriving it."""
         warehouse = _warehouse_location()
-        self.is_remote = str(warehouse).startswith(_S3_SCHEMES)
+        is_remote = str(warehouse).startswith(_S3_SCHEMES)
 
-        if self.is_remote:
+        if is_remote:
             warehouse = str(warehouse).replace("s3a://", "s3://", 1)
             meta_dir = _local_meta_dir()
         else:
@@ -144,32 +155,7 @@ class PyIcebergEngine:
             Path(warehouse).mkdir(parents=True, exist_ok=True)
             meta_dir = Path(warehouse)
         meta_dir.mkdir(parents=True, exist_ok=True)
-
-        params: dict[str, str] = {
-            "type": os.getenv("ICEBERG_CATALOG_TYPE", "sql"),
-            "uri": _env("ICEBERG_CATALOG_URI")
-            or f"sqlite:///{meta_dir.absolute().as_posix()}/pyiceberg_catalog.db",
-            "warehouse": warehouse if self.is_remote else f"file://{warehouse}",
-        }
-        # Exposed for catalog_guard.check_same_catalog: the identity that
-        # must match the Flight server's own (HybridBackend.uri /
-        # .warehouse_path) before a direct pyiceberg write is allowed.
-        self.uri = params["uri"]
-        self.warehouse_path = params["warehouse"]
-        if not self.is_remote:
-            return params
-
-        endpoint = _env("S3_ENDPOINT", "AWS_ENDPOINT_URL_S3")
-        access_key = _env("AWS_ACCESS_KEY_ID")
-        secret_key = _env("AWS_SECRET_ACCESS_KEY")
-        params["s3.region"] = _env("AWS_REGION", "AWS_DEFAULT_REGION") or "us-east-1"
-        params["s3.path-style-access"] = "true" if endpoint else "false"
-        if endpoint:
-            params["s3.endpoint"] = endpoint
-        if access_key and secret_key:
-            params["s3.access-key-id"] = access_key
-            params["s3.secret-access-key"] = secret_key
-        return params
+        return warehouse, is_remote, meta_dir
 
     # -- table ops -----------------------------------------------------------
 

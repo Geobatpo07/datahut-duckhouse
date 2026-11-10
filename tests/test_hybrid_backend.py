@@ -14,6 +14,7 @@ from flight_server.app.backends.hybrid_backend import (
     HybridBackend,
     _is_remote_warehouse,
 )
+from iceberg_catalog.factory import build_catalog_params
 
 
 @pytest.fixture
@@ -95,12 +96,14 @@ class TestS3CatalogParams:
     """The S3 wiring the vanilla xorq backend does not do."""
 
     def _connect(self, tmp_path, **kw):
-        be = HybridBackend.__new__(HybridBackend)
-        be.is_remote = True
-        be.namespace = "default"
-        be.warehouse_path = "s3://bucket/wh"
-        be.uri = f"sqlite:///{tmp_path}/cat.db"
-        return be._build_catalog_params(catalog_type="sql", **kw)
+        return build_catalog_params(
+            catalog_type="sql",
+            catalog_uri=f"sqlite:///{tmp_path}/cat.db",
+            catalog_branch=kw.pop("catalog_branch", "main"),
+            is_remote=True,
+            warehouse="s3://bucket/wh",
+            **kw,
+        )
 
     def test_explicit_s3_params_are_forwarded(self, tmp_path):
         params = self._connect(
@@ -145,12 +148,14 @@ class TestRestCatalogParams:
     not a variant of it -- see ADR-0006, decision 8b."""
 
     def _connect(self, tmp_path, **kw):
-        be = HybridBackend.__new__(HybridBackend)
-        be.is_remote = True
-        be.namespace = "default"
-        be.warehouse_path = "s3://bucket/wh"
-        be.uri = "http://nessie:19120/iceberg"
-        return be._build_catalog_params(catalog_type="rest", **kw)
+        return build_catalog_params(
+            catalog_type="rest",
+            catalog_uri="http://nessie:19120/iceberg",
+            catalog_branch=kw.pop("catalog_branch", "main"),
+            is_remote=True,
+            warehouse="s3://bucket/wh",
+            **kw,
+        )
 
     def test_no_warehouse_key(self, tmp_path):
         """A client-supplied ``warehouse`` makes Nessie's REST catalog
