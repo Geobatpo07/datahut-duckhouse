@@ -52,6 +52,7 @@ def make_hybrid_connection() -> HybridBackend:
         catalog_name=os.getenv("ICEBERG_CATALOG", "default"),
         catalog_type=os.getenv("ICEBERG_CATALOG_TYPE", "sql"),
         catalog_uri=os.getenv("ICEBERG_CATALOG_URI"),
+        catalog_branch=os.getenv("ICEBERG_BRANCH", "main"),
     )
     return backend
 

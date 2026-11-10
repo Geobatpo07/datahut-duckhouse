@@ -14,6 +14,7 @@ from flight_server.app.backends.hybrid_backend import (
     HybridBackend,
     _is_remote_warehouse,
 )
+from iceberg_catalog.factory import build_catalog_params
 
 
 @pytest.fixture
@@ -95,12 +96,14 @@ class TestS3CatalogParams:
     """The S3 wiring the vanilla xorq backend does not do."""
 
     def _connect(self, tmp_path, **kw):
-        be = HybridBackend.__new__(HybridBackend)
-        be.is_remote = True
-        be.namespace = "default"
-        be.warehouse_path = "s3://bucket/wh"
-        be.uri = f"sqlite:///{tmp_path}/cat.db"
-        return be._build_catalog_params(catalog_type="sql", **kw)
+        return build_catalog_params(
+            catalog_type="sql",
+            catalog_uri=f"sqlite:///{tmp_path}/cat.db",
+            catalog_branch=kw.pop("catalog_branch", "main"),
+            is_remote=True,
+            warehouse="s3://bucket/wh",
+            **kw,
+        )
 
     def test_explicit_s3_params_are_forwarded(self, tmp_path):
         params = self._connect(
@@ -138,6 +141,78 @@ class TestS3CatalogParams:
         assert params["s3.access-key-id"] == "envkey"
         assert params["s3.secret-access-key"] == "envsecret"
         assert params["s3.region"] == "us-east-1"  # documented default
+
+
+class TestRestCatalogParams:
+    """Nessie (``catalog_type="rest"``) is a distinct shape from ``sql``,
+    not a variant of it -- see ADR-0006, decision 8b."""
+
+    def _connect(self, tmp_path, **kw):
+        return build_catalog_params(
+            catalog_type="rest",
+            catalog_uri="http://nessie:19120/iceberg",
+            catalog_branch=kw.pop("catalog_branch", "main"),
+            is_remote=True,
+            warehouse="s3://bucket/wh",
+            **kw,
+        )
+
+    def test_no_warehouse_key(self, tmp_path):
+        """A client-supplied ``warehouse`` makes Nessie's REST catalog
+        reject the connection outright (docs/spikes/NESSIE_SPIKES_2.md, T5:
+        "Warehouse ... is not known")."""
+        params = self._connect(
+            tmp_path,
+            s3_endpoint="http://minio:9000",
+            s3_access_key="ak",
+            s3_secret_key="sk",
+            s3_region=None,
+            s3_path_style=None,
+        )
+        assert "warehouse" not in params
+        assert params["type"] == "rest"
+        assert params["uri"] == "http://nessie:19120/iceberg"
+
+    def test_prefix_selects_the_branch(self, tmp_path):
+        params = self._connect(
+            tmp_path,
+            s3_endpoint=None,
+            s3_access_key=None,
+            s3_secret_key=None,
+            s3_region=None,
+            s3_path_style=None,
+            catalog_branch="dev",
+        )
+        assert params["prefix"] == "dev"
+
+    def test_prefix_defaults_to_main(self, tmp_path):
+        params = self._connect(
+            tmp_path,
+            s3_endpoint=None,
+            s3_access_key=None,
+            s3_secret_key=None,
+            s3_region=None,
+            s3_path_style=None,
+        )
+        assert params["prefix"] == "main"
+
+    def test_s3_properties_still_forwarded(self, tmp_path):
+        """Still needed client-side for the catalog connection itself
+        (namespace listing, table creation), even though Nessie's per-table
+        config overrides them for actual data writes (T1)."""
+        params = self._connect(
+            tmp_path,
+            s3_endpoint="http://minio:9000",
+            s3_access_key="ak",
+            s3_secret_key="sk",
+            s3_region="eu-west-3",
+            s3_path_style=None,
+        )
+        assert params["s3.endpoint"] == "http://minio:9000"
+        assert params["s3.access-key-id"] == "ak"
+        assert params["s3.secret-access-key"] == "sk"
+        assert params["s3.region"] == "eu-west-3"
+        assert params["s3.path-style-access"] == "true"
 
 
 moto_server = pytest.importorskip("moto.server", reason="moto not installed")

@@ -115,12 +115,22 @@ class TestCliBehaviour:
 
     @pytest.mark.parametrize(
         "args",
-        [["branch", "create", "x"], ["branch", "list"], ["branch", "switch", "x"]],
+        [
+            ["branch", "create", "x"],
+            ["branch", "list"],
+            ["branch", "delete", "x"],
+            ["merge", "x"],
+            ["tag", "x"],
+            ["rollback", "deadbeef"],
+        ],
     )
-    def test_branch_is_a_documented_stub(self, runner, args):
+    def test_versioning_commands_need_deployment_mode(self, runner, monkeypatch, args):
+        """ADR-0006, decision 4: every versioning command fails with exit
+        code 2 in solo mode (no Nessie reference model to branch)."""
+        monkeypatch.delenv("ICEBERG_CATALOG_TYPE", raising=False)
         result = runner.invoke(cli_mod.cli, args)
-        assert result.exit_code != 0
-        assert "Nessie" in result.output and "Phase 3" in result.output
+        assert result.exit_code == 2
+        assert "deployment mode" in result.output
 
     def test_server_unreachable_is_a_clean_error(self, runner, monkeypatch):
         def boom():

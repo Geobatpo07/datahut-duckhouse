@@ -1,0 +1,112 @@
+# Spike-only stack for ADR-0006 (docs/adr/0006-single-shared-catalog.md). Verifies
+# the "Nessie through the Iceberg REST interface" decision before it moves from
+# Proposed to Accepted. NOT part of the production stack: datahut_duckhouse/,
+# flight_server/ and ingestion/ must not be wired against this file.
+#
+# Reuses the main stack's network and MinIO service instead of recreating them --
+# bring docker-compose.yml's `minio` service up first. Nessie gets its own,
+# dedicated Postgres database (not the tenant metadata database of ADR-0003).
+#
+#   docker compose up -d minio                      # main stack, if not already up
+#   docker compose -f docker-compose.nessie.yml up -d
+#   docker compose -f docker-compose.nessie.yml down -v   # drops the spike's Postgres volume too
+#
+# See docs/spikes/NESSIE_SPIKES.md for the experiments run against this stack and
+# their results.
+
+name: datahut-duckhouse-nessie-spike
+
+services:
+  nessie-postgres:
+    image: postgres:16-alpine
+    container_name: nessie-postgres
+    environment:
+      # Throwaway, local-only spike credentials -- same convention as
+      # docker-compose.test.yml's chinook-postgres, not the kind of secret
+      # docker-compose.yml's .env indirection exists to protect.
+      POSTGRES_USER: nessie
+      POSTGRES_PASSWORD: nessie
+      POSTGRES_DB: nessie
+    ports:
+      - "5434:5432"
+    volumes:
+      - nessie_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nessie -d nessie"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - duckhouse-net
+
+  nessie:
+    image: ghcr.io/projectnessie/nessie:0.108.4-java
+    container_name: nessie
+    env_file:
+      - .env
+    environment:
+      # Version store: Postgres via JDBC2 (the current, non-deprecated JDBC
+      # store type -- see docs/spikes/NESSIE_SPIKES.md, S0/S1 notes).
+      NESSIE_VERSION_STORE_TYPE: JDBC2
+      NESSIE_VERSION_STORE_PERSIST_JDBC_DATASOURCE: postgresql
+      QUARKUS_DATASOURCE_POSTGRESQL_DB_KIND: postgresql
+      QUARKUS_DATASOURCE_POSTGRESQL_JDBC_URL: jdbc:postgresql://nessie-postgres:5432/nessie
+      QUARKUS_DATASOURCE_POSTGRESQL_USERNAME: nessie
+      QUARKUS_DATASOURCE_POSTGRESQL_PASSWORD: nessie
+      # Nessie's built-in Iceberg REST catalog, pointed at the main stack's
+      # MinIO (reused, not recreated -- credentials come from the root .env,
+      # same as docker-compose.yml's minio service).
+      NESSIE_CATALOG_DEFAULT_WAREHOUSE: warehouse
+      NESSIE_CATALOG_WAREHOUSES_WAREHOUSE_LOCATION: s3://duckhouse-warehouse/nessie-spike/
+      NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_ENDPOINT: http://minio:9000/
+      NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_PATH_STYLE_ACCESS: "true"
+      NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_AUTH_TYPE: STATIC
+      NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_REGION: us-east-1
+      NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_ACCESS_KEY: urn:nessie-secret:quarkus:nessie.catalog.secrets.minio
+      NESSIE_CATALOG_SECRETS_MINIO_NAME: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      NESSIE_CATALOG_SECRETS_MINIO_SECRET: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+      # Spike only: no auth, matches the main stack's current state (ADR-0005
+      # auth is not wired into Flight either yet).
+      NESSIE_SERVER_AUTHENTICATION_ENABLED: "false"
+    ports:
+      - "19120:19120"
+    depends_on:
+      nessie-postgres:
+        condition: service_healthy
+    networks:
+      - duckhouse-net
+
+  # Dedicated store for nessie-gc's own "live contents set" (T2, spike
+  # round 2) -- nessie-gc needs its own JDBC database, separate from both
+  # Nessie's own version-store Postgres above and ADR-0003's tenant
+  # metadata database. Not started by `up -d` without a profile: only
+  # needed while running T2, matching "reused, not recreated" for
+  # everything else in this file.
+  nessie-gc-postgres:
+    image: postgres:16-alpine
+    container_name: nessie-gc-postgres
+    profiles: ["gc"]
+    environment:
+      POSTGRES_USER: nessiegc
+      POSTGRES_PASSWORD: nessiegc
+      POSTGRES_DB: nessiegc
+    ports:
+      - "5435:5432"
+    volumes:
+      - nessie_gc_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nessiegc -d nessiegc"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - duckhouse-net
+
+volumes:
+  nessie_postgres_data:
+  nessie_gc_postgres_data:
+
+networks:
+  duckhouse-net:
+    external: true
+    name: datahut-duckhouse_duckhouse-net

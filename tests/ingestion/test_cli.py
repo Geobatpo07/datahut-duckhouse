@@ -96,6 +96,60 @@ class TestOptionsAndExitCodes:
         assert r.exit_code == 2
         assert "X_URL" in r.output
 
+    def test_run_sink_direct_unavailable_exits_2(self, runner, monkeypatch):
+        """ADR-0006, decision 5: an explicit --sink direct that isn't
+        possible fails with exit code 2, never a silent fallback."""
+        source = _fake_source()
+        monkeypatch.setattr(ingestion, "list_sources", lambda: [source])
+        monkeypatch.setattr(
+            ingestion,
+            "run_source",
+            lambda *a, **kw: (_ for _ in ()).throw(
+                ingestion.DirectSinkUnavailableError(
+                    "--sink direct requested but not possible: storage unreachable"
+                )
+            ),
+        )
+        r = runner.invoke(cli_mod.cli, ["ingest", "run", "s", "--sink", "direct"])
+        assert r.exit_code == 2
+        assert "storage unreachable" in r.output
+
+    def test_run_passes_sink_override_through(self, runner, monkeypatch):
+        source = _fake_source()
+        monkeypatch.setattr(ingestion, "list_sources", lambda: [source])
+        captured = {}
+
+        def _run_source(name, **kw):
+            captured.update(kw)
+            return ingestion.RunResult(source=name)
+
+        monkeypatch.setattr(ingestion, "run_source", _run_source)
+        r = runner.invoke(cli_mod.cli, ["ingest", "run", "s", "--sink", "flight"])
+        assert r.exit_code == 0, r.output
+        assert captured["sink"] == "flight"
+
+    def test_run_without_sink_option_passes_none(self, runner, monkeypatch):
+        """No --sink given -> sink=None passed through, so run_source falls
+        back to the source's own configured sink (default "auto")."""
+        source = _fake_source()
+        monkeypatch.setattr(ingestion, "list_sources", lambda: [source])
+        captured = {}
+
+        def _run_source(name, **kw):
+            captured.update(kw)
+            return ingestion.RunResult(source=name)
+
+        monkeypatch.setattr(ingestion, "run_source", _run_source)
+        r = runner.invoke(cli_mod.cli, ["ingest", "run", "s"])
+        assert r.exit_code == 0, r.output
+        assert captured["sink"] is None
+
+    def test_run_rejects_unknown_sink_choice(self, runner, monkeypatch):
+        monkeypatch.setattr(ingestion, "list_sources", lambda: [_fake_source()])
+        r = runner.invoke(cli_mod.cli, ["ingest", "run", "s", "--sink", "bogus"])
+        assert r.exit_code != 0
+        assert "Invalid value" in r.output or "invalid choice" in r.output.lower()
+
     def test_run_success_reports_each_table(self, runner, monkeypatch):
         source = _fake_source()
         monkeypatch.setattr(ingestion, "list_sources", lambda: [source])

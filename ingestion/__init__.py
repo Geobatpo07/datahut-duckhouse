@@ -28,6 +28,7 @@ from ingestion.engine.dlt_engine import DEFAULT_WORK_DIR, ConnectorError, DltIng
 from ingestion.runs.store import read_runs
 from ingestion.sinks.base import SchemaContractViolationError, SinkError
 from ingestion.sinks.catalog_guard import CatalogMismatchError, check_same_catalog
+from ingestion.sinks.router import DirectSinkUnavailableError, UnknownSinkError
 
 __all__ = [
     "SOURCES_YML",
@@ -40,6 +41,8 @@ __all__ = [
     "SchemaContractViolationError",
     "SinkError",
     "CatalogMismatchError",
+    "DirectSinkUnavailableError",
+    "UnknownSinkError",
     "list_sources",
     "validate_registry",
     "extract_source",
@@ -75,10 +78,15 @@ def extract_source(
     return connector.build_resources(source, work_dir)
 
 
-def _with_overrides(source: SourceConfig, tables: list[str] | None) -> SourceConfig:
+def _with_overrides(
+    source: SourceConfig, tables: list[str] | None, sink: str | None = None
+) -> SourceConfig:
+    update: dict = {}
     if tables:
-        return source.model_copy(update={"resources": list(tables)})
-    return source
+        update["resources"] = list(tables)
+    if sink is not None:
+        update["sink"] = sink
+    return source.model_copy(update=update) if update else source
 
 
 def dry_run_source(name: str, tables: list[str] | None = None) -> RunResult:
@@ -105,15 +113,18 @@ def run_source(
     run_log_echo: Callable[[str], None] = print,
     tables: list[str] | None = None,
     full_refresh: bool = False,
+    sink: str | None = None,
 ) -> RunResult:
     """Extract and load ``name`` (one entry from ``sources.yml``).
 
-    ``replace``/``append`` write through ``flight_backend`` (already
-    connected -- see ``datahut_duckhouse.connection.connect``). ``merge``
-    writes direct via pyiceberg, connected lazily through
-    ``pyiceberg_connect`` (only called if a 'merge' source is actually
-    encountered) and gated by a catalog-identity check against
-    ``flight_backend`` -- see ``sinks/catalog_guard.py``.
+    Which sink writes each table is resolved per ADR-0006, decision 5
+    (``ingestion.sinks.router``) from ``source.sink`` (default ``auto``),
+    overridable here with ``sink`` (``dhd ingest run --sink``). ``merge``,
+    and now ``replace``/``append`` when the direct sink is chosen, write
+    direct via pyiceberg, connected lazily through ``pyiceberg_connect``
+    (only called the first time a direct write is actually needed) and
+    gated by a catalog-identity check against ``flight_backend`` -- see
+    ``sinks/catalog_guard.py``.
 
     ``tables`` narrows extraction to specific resources, same as editing
     ``resources`` in ``sources.yml`` for just this run. ``full_refresh``
@@ -124,7 +135,7 @@ def run_source(
     warning): `incremental` + `append` is rejected at validation time, so
     that unsafe combination can't reach here.
     """
-    source = _with_overrides(get_source(name), tables)
+    source = _with_overrides(get_source(name), tables, sink)
     if full_refresh:
         _state.clear_source(source.name)
     engine = DltIngestor(flight_backend, pyiceberg_connect, run_log_echo=run_log_echo)

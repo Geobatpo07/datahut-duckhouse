@@ -27,7 +27,10 @@ dependencies = [
     "dbt-duckdb>=1.9.2",
     "dbt-trino>=1.9.0",
     "trino>=0.328.0",
-    "s3fs",
+    # Nessie's REST catalog vends a table-level FsspecFileIO config that an
+    # old s3fs can't satisfy (TypeError: multiple values for 'aws_access_key_id'
+    # on any S3 data write) -- see docs/spikes/NESSIE_SPIKES.md, S1.
+    "s3fs>=2024.1.0",
     "boto3",
     "python-dotenv",
     "urllib3>=2.2.3",

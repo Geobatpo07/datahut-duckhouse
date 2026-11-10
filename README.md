@@ -127,7 +127,14 @@ uv run dhd query "SELECT * FROM sales"
 
 `dhd` reads `FLIGHT_SERVER_HOST` / `FLIGHT_SERVER_PORT` (default `localhost:8815`).
 If the server isn't running it fails with a clear message rather than hanging.
-`dhd branch …` is a placeholder until Nessie lands (ADR-0002 / Phase 3).
+
+**Catalog modes** (ADR-0006 — see [docs/CATALOG.md](docs/CATALOG.md) for the
+full picture): **solo** (default, no extra setup — a local SQLite catalog, try
+it on one laptop with `uv run dhd create-table ...` as shown above) vs.
+**deployment** (`ICEBERG_CATALOG_TYPE=rest` against a Nessie catalog, inside
+the Docker network — `docker compose -f docker-compose.nessie.yml up -d`,
+then `dhd branch create|list|delete`, `dhd merge`, `dhd tag`, `dhd rollback`
+for warehouse versioning).
 
 Loading a configured source (SQL/files/REST, see
 [docs/INGESTION.md](docs/INGESTION.md)) is one command:

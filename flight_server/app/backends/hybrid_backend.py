@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
-from pyiceberg.catalog import load_catalog
 from xorq.backends.pyiceberg import Backend as PyIcebergBackend
 from xorq.common.utils.logging_utils import get_print_logger
 from xorq.vendor.ibis.backends.duckdb import Backend as DuckDBBackend
 from xorq.vendor.ibis.expr import schema as sch
 from xorq.vendor.ibis.expr import types as ir
+
+from iceberg_catalog import get_catalog
 
 logger = get_print_logger()
 
@@ -65,6 +66,7 @@ class HybridBackend(PyIcebergBackend):
         catalog_name: str = "default",
         catalog_type: str = "sql",
         catalog_uri: str | None = None,
+        catalog_branch: str | None = None,
         s3_endpoint: str | None = None,
         s3_access_key: str | None = None,
         s3_secret_key: str | None = None,
@@ -96,23 +98,24 @@ class HybridBackend(PyIcebergBackend):
             )
         )
 
-        self.catalog_params = self._build_catalog_params(
+        logger.info(
+            f"Connexion catalogue Iceberg '{catalog_name}' "
+            f"(warehouse={self.warehouse_path}, remote={self.is_remote})"
+        )
+        self.catalog = get_catalog(
+            catalog_name=catalog_name,
+            warehouse=self.warehouse_path,
+            is_remote=self.is_remote,
             catalog_type=catalog_type,
+            catalog_uri=self.uri,
+            catalog_branch=catalog_branch or _env("ICEBERG_BRANCH") or "main",
             s3_endpoint=s3_endpoint,
             s3_access_key=s3_access_key,
             s3_secret_key=s3_secret_key,
             s3_region=s3_region,
             s3_path_style=s3_path_style,
+            ensure_namespace=self.namespace,
         )
-
-        logger.info(
-            f"Connexion catalogue Iceberg '{catalog_name}' "
-            f"(warehouse={self.warehouse_path}, remote={self.is_remote})"
-        )
-        self.catalog = load_catalog(catalog_name, **self.catalog_params)
-
-        if self.namespace not in [n[0] for n in self.catalog.list_namespaces()]:
-            self.catalog.create_namespace(self.namespace)
 
         duckdb_dir = os.getcwd() if self.is_remote else self.warehouse_path
         self.duckdb_path = duckdb_path or os.path.join(duckdb_dir, "duckhouse.duckdb")
@@ -128,48 +131,6 @@ class HybridBackend(PyIcebergBackend):
         self.duckdb_con.do_connect(database=self.duckdb_path)
         self._reflect_views()
         self._create_snapshot()
-
-    def _build_catalog_params(
-        self,
-        catalog_type: str,
-        s3_endpoint: str | None,
-        s3_access_key: str | None,
-        s3_secret_key: str | None,
-        s3_region: str | None,
-        s3_path_style: bool | None,
-    ) -> dict:
-        params = {
-            "type": catalog_type,
-            "uri": self.uri,
-            "warehouse": (
-                self.warehouse_path
-                if self.is_remote
-                else f"file://{self.warehouse_path}"
-            ),
-        }
-
-        if not self.is_remote:
-            return params
-
-        endpoint = s3_endpoint or _env("S3_ENDPOINT", "AWS_ENDPOINT_URL_S3")
-        access_key = s3_access_key or _env("AWS_ACCESS_KEY_ID")
-        secret_key = s3_secret_key or _env("AWS_SECRET_ACCESS_KEY")
-        region = s3_region or _env("AWS_REGION", "AWS_DEFAULT_REGION") or "us-east-1"
-
-        # Un endpoint personnalisé => MinIO / S3-compatible => path-style par défaut.
-        if s3_path_style is None:
-            s3_path_style = endpoint is not None
-
-        params["s3.region"] = region
-        if endpoint:
-            params["s3.endpoint"] = endpoint
-        if access_key and secret_key:
-            params["s3.access-key-id"] = access_key
-            params["s3.secret-access-key"] = secret_key
-        if s3_path_style:
-            params["s3.path-style-access"] = "true"
-
-        return params
 
     def create_table(self, table_name: str, data, **kwargs) -> bool:
         """

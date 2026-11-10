@@ -4,10 +4,11 @@ import os
 import duckdb
 import s3fs
 from dotenv import load_dotenv
-from pyiceberg.catalog import load_catalog
 from xorq.backends.pyiceberg import Backend as IcebergBackend
 from xorq.flight.client import FlightClient
 from xorq.vendor.ibis.backends.duckdb import Backend as DuckDBBackend
+
+from iceberg_catalog import get_catalog
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -67,14 +68,10 @@ def get_s3_filesystem() -> s3fs.S3FileSystem:
 
 
 def get_iceberg_catalog():
-    """Create and return an Iceberg catalog instance."""
+    """Create and return an Iceberg catalog instance, through the shared
+    factory (ADR-0006, decision 1) -- never ``load_catalog`` directly."""
     try:
-        return load_catalog(
-            name=os.getenv("ICEBERG_CATALOG", "minio_catalog"),
-            uri=os.getenv("S3_ENDPOINT", "http://localhost:9000"),
-            warehouse=os.getenv("ICEBERG_WAREHOUSE", "s3://duckhouse-warehouse/"),
-            s3={"s3fs": get_s3_filesystem()},
-        )
+        return get_catalog(catalog_name=os.getenv("ICEBERG_CATALOG", "minio_catalog"))
     except Exception as e:
         logger.error(f"Failed to create Iceberg catalog: {e}")
         raise

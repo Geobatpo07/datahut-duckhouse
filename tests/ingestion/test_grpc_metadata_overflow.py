@@ -87,6 +87,10 @@ def _wide_source(**overrides) -> SourceConfig:
         "format": "parquet",
         "write_disposition": "append",
         "batch_rows": None,
+        # This test is specifically about a Flight/gRPC-only bug (xorq's
+        # do_put error-bounding gap) -- must go through FlightSink, not
+        # whichever sink ADR-0006's routing would otherwise pick.
+        "sink": "flight",
     }
     defaults.update(overrides)
     return SourceConfig(**defaults)
@@ -117,7 +121,9 @@ class TestGrpcMetadataOverflow:
 
         message = str(exc_info.value)
         assert "wide_t" in message
-        assert "server logs" in message.lower() or "server's own logs" in message.lower()
+        assert (
+            "server logs" in message.lower() or "server's own logs" in message.lower()
+        )
 
     def test_the_failure_is_logged_not_lost(self, flight_server, tmp_path, monkeypatch):
         from datahut_duckhouse.connection import connect as flight_connect

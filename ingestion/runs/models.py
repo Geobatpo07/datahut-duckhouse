@@ -21,6 +21,10 @@ SCHEMA = pa.schema(
         ("commits", pa.int64()),
         ("status", pa.string()),
         ("error", pa.string()),
+        # ADR-0006, decision 5: which sink actually wrote this table, and
+        # why (e.g. "auto: direct path reachable", "explicit --sink flight").
+        ("sink", pa.string()),
+        ("sink_reason", pa.string()),
     ]
 )
 
@@ -37,6 +41,8 @@ class RunLogRow:
     status: str
     commits: int = 1
     error: str | None = None
+    sink: str | None = None
+    sink_reason: str | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)

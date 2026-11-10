@@ -59,7 +59,9 @@ def _fake_connector(written: dict[str, Path]):
     return types.SimpleNamespace(build_resources=lambda source, work_dir: written)
 
 
-def _engine(flight_backend, monkeypatch, written: dict[str, Path], echo=None) -> DltIngestor:
+def _engine(
+    flight_backend, monkeypatch, written: dict[str, Path], echo=None
+) -> DltIngestor:
     monkeypatch.setattr(
         dlt_engine_module.connector_registry,
         "get",
@@ -81,11 +83,15 @@ def _rows_via_flight(table_name: str) -> list[dict]:
 def _snapshot_count(table_name: str) -> int:
     from datahut_duckhouse.ingest import connect as ingest_connect
 
-    return len(list(ingest_connect().catalog.load_table(f"default.{table_name}").snapshots()))
+    return len(
+        list(ingest_connect().catalog.load_table(f"default.{table_name}").snapshots())
+    )
 
 
 class TestAppendChunking:
-    def test_splits_into_batch_rows_sized_commits(self, flight_server, tmp_path, monkeypatch):
+    def test_splits_into_batch_rows_sized_commits(
+        self, flight_server, tmp_path, monkeypatch
+    ):
         from datahut_duckhouse.connection import connect as flight_connect
 
         source = _make_source(name="s", write_disposition="append", batch_rows=2)
@@ -102,7 +108,9 @@ class TestAppendChunking:
         rows = _rows_via_flight("s_t")
         assert {r["id"] for r in rows} == {1, 2, 3, 4, 5}
 
-    def test_run_log_records_the_real_commit_count(self, flight_server, tmp_path, monkeypatch):
+    def test_run_log_records_the_real_commit_count(
+        self, flight_server, tmp_path, monkeypatch
+    ):
         from datahut_duckhouse.connection import connect as flight_connect
         from ingestion.runs.models import RUN_LOG_TABLE
 
@@ -132,7 +140,9 @@ class TestAppendChunking:
         result = engine.run(source)
         assert result.tables[0].commits == 1
 
-    def test_null_batch_rows_disables_chunking(self, flight_server, tmp_path, monkeypatch):
+    def test_null_batch_rows_disables_chunking(
+        self, flight_server, tmp_path, monkeypatch
+    ):
         from datahut_duckhouse.connection import connect as flight_connect
 
         source = _make_source(name="s", write_disposition="append", batch_rows=None)
@@ -167,7 +177,9 @@ class TestMergeChunking:
 
 
 class TestReplaceIgnoresBatchRows:
-    def test_forces_a_single_commit_and_warns(self, flight_server, tmp_path, monkeypatch):
+    def test_forces_a_single_commit_and_warns(
+        self, flight_server, tmp_path, monkeypatch
+    ):
         from datahut_duckhouse.connection import connect as flight_connect
 
         messages: list[str] = []
@@ -189,7 +201,9 @@ class TestReplaceIgnoresBatchRows:
             "replace" in m and "batch_rows=2" in m and "ignored" in m for m in messages
         )
 
-    def test_no_warning_when_batch_rows_is_null(self, flight_server, tmp_path, monkeypatch):
+    def test_no_warning_when_batch_rows_is_null(
+        self, flight_server, tmp_path, monkeypatch
+    ):
         from datahut_duckhouse.connection import connect as flight_connect
 
         messages: list[str] = []
@@ -215,7 +229,9 @@ class TestKillMidBatch:
         self, flight_backend, monkeypatch, written, fail_on_call: int, source
     ):
         engine = _engine(flight_backend, monkeypatch, written)
-        sink = engine._sink_for(source)  # DirectSink for merge, FlightSink otherwise
+        sink, _, _ = engine._sink_for(
+            source
+        )  # DirectSink for merge, FlightSink otherwise
         calls = {"n": 0}
         original_write = sink.write
 

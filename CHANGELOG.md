@@ -4,6 +4,36 @@
 
 ### Added
 
+- **Shared Iceberg catalog with warehouse versioning** (ADR-0006,
+  `feat/shared-catalog`): `iceberg_catalog/`, a new top-level package, is
+  now the single access point every component opens the catalog through
+  (`get_catalog()`, enforced by an AST test) -- solo mode (local SQLite,
+  the default) or deployment mode (`ICEBERG_CATALOG_TYPE=rest`, a Nessie
+  catalog). `s3fs>=2024.1.0` is now constrained (was unpinned, resolved
+  to a 2020 release incompatible with Nessie's vended S3 file I/O
+  config). `dhd branch create|list|delete`, `dhd merge`, `dhd tag`,
+  `dhd rollback` and a global `--branch` are real now (replacing the old
+  "Phase 3, not wired yet" stub), through a plain stdlib HTTP client
+  against Nessie's REST API v2 -- `dhd merge` fails on any conflict and
+  lists the conflicting tables, never resolves one automatically; `dhd
+  branch delete` refuses unmerged work unless `--force`. Ingestion gained
+  `sink: auto|flight|direct` routing (`--sink` override): `auto` picks
+  direct whenever this process can reach the catalog/storage directly
+  (no size threshold -- measured: direct beat Flight in every routing
+  scenario tested, up to 7.7x at 10M rows), `direct` writes every
+  `write_disposition` now (not just `merge`) and exits 2 rather than
+  falling back silently when it isn't possible, commit conflicts retry
+  with backoff (verified against two real concurrent writers on Nessie).
+  Retention: `docs/RETENTION.md`'s `nessie-gc` procedure plus
+  `scripts/orphan_sweep.py` for the one thing `nessie-gc` structurally
+  can't see -- files left behind by a branch deleted before being merged
+  (verified live: a real `nessie-gc` run's log never mentions such a
+  branch at all; the sweep finds exactly its files). See
+  [docs/CATALOG.md](docs/CATALOG.md) for the full picture, including the
+  one condition left partially open: a table written directly is visible
+  at once to `dhd query`/`dhd list-tables` (verified), but not to dbt's
+  `dev` target, which doesn't see Iceberg-backed tables at all today,
+  independent of this change.
 - **Ingestion source registry v2, three connector families** (Vague 1b,
   `feat/vague-1b-registre-dlt`): `ingestion/dlt/sources.yml` is now
   pydantic-validated (`ingestion/dlt/registry.py`) with
