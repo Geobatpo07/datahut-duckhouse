@@ -11,10 +11,11 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("dlt", reason="requires optional 'ingest' dependencies")
+
 from ingestion.config.models import SourceConfig
 from ingestion.config.registry import get_source
 from ingestion.connectors import sql
-pytest.importorskip("dlt", reason="requires optional 'ingest' dependencies")
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 
