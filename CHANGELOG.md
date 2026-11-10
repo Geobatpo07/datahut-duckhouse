@@ -43,6 +43,119 @@
   after its first JSON round trip, which `dlt.sources.incremental` rejected.
   See [docs/INGESTION.md](docs/INGESTION.md) for how to add a source.
 
+### `dhd ingest` restructuring (`feat/dhd-ingest`), step B: the CLI
+
+- **New `dhd ingest` command group**, a thin layer over `ingestion`'s
+  public API (`ingestion/cli.py`): `run <source>` (`--table`, `--dry-run`,
+  `--full-refresh`/`--yes`), `run --all` (`--family`, `--fail-fast`,
+  isolated per source with a summary at the end), `list` (name, family,
+  schedule, last run status), `validate` (registry + secret presence by
+  name + catalog coherence for any `merge` source), `runs` (`--source`,
+  `--last`, `--status`), `new <family> <name>`. `dlt` never appears in
+  this command's help text or error messages -- only in
+  [docs/INGESTION_ARCHITECTURE.md](docs/INGESTION_ARCHITECTURE.md)'s
+  architecture note.
+- Exit codes: 0 success, 1 at least one source failed, 2 a configuration
+  problem (bad registry, missing secret, mismatched catalog) --
+  distinguished by exception type, not by guessing from the message.
+- `--dry-run` now does a real extraction (a real DB query, a real API
+  call) and reports actual row counts, writing nothing at all -- verified
+  by comparing a table's Iceberg snapshot count before and after.
+  `--full-refresh` drops the source's incremental cursor
+  (`ingestion.engine.state.clear_source`) so the next run starts from
+  scratch, same as a brand-new source.
+- Error messages now name the probable cause and the action to take, and
+  never leak a secret's resolved value (`SourceConfig.redact`, tested with
+  a fake secret value) -- a full traceback goes to a local log file
+  instead, whose path is printed alongside the clean message.
+- `dhd ingest-dlt` and `dhd sources validate`/`list` remain as deprecated
+  aliases (print a one-line warning to stderr, otherwise unchanged).
+  `dhd drop-table` stays outside the `ingest` group.
+- Tests: `tests/ingestion/test_cli.py` (16 cases: option parsing, exit
+  codes, `--all`/`--fail-fast`, secret redaction, both deprecated aliases,
+  plus a real-Flight-server class covering dry-run/run/rerun/list/runs
+  against the real `sqlite_chinook` source); `tests/ingestion/test_engine.py`
+  gained a crash-then-resume class (a connector that raises mid-extraction,
+  simulating a kill before any commit) for `replace` and `merge`. 167
+  tests passing overall, verified under both Python 3.11 and 3.13 (a
+  throwaway `uv venv --python 3.11`) -- which caught a real bug: several
+  of `test_cli.py`'s "mocked" tests were patching the wrong attribute
+  (`cli_mod.connect`, not `ingestion.cli`'s own captured connection
+  factories) and silently hitting the real Docker Flight server instead,
+  masked under 3.13 because that server happened to be reachable and
+  version-matched. Fixed.
+
+### `dhd ingest` restructuring (`feat/dhd-ingest`), step A: module layout
+
+- **`ingestion/` is now a real, importable package** -- the pre-existing
+  `ingestion/__init__.py` (unrelated multi-tenant scaffold, already
+  non-functional: it imported submodules that didn't exist on disk and
+  raised `ModuleNotFoundError` the moment anything tried
+  `import ingestion.<anything>`) is replaced by a small public API
+  (`list_sources`, `validate_registry`, `extract_source`, `run_source`).
+  Every module that used to load `ingestion/dlt/pipeline.py`/`registry.py`
+  by file path to dodge that trap (`pipeline.py`, 5 test files, 2
+  scripts) now uses ordinary `import ingestion...` instead.
+- Moved into five layers under `ingestion/` -- `config/` (pydantic models
+  + validation rules + the registry loader, moved from `registry.py`),
+  `connectors/` (`sql.py`/`files.py`/`rest.py`, each exposing
+  `build_resources`; `_dlt_sources.py` isolates every `dlt` import so the
+  connectors themselves don't need one), `engine/` (`dlt_engine.DltIngestor`,
+  the one orchestration implementation; `state.py`, the incremental
+  cursor store, with its directory now configurable via
+  `DHD_INGEST_STATE_DIR`), `sinks/` (`flight_sink.py`/`direct_sink.py`/
+  `catalog_guard.py`, moved from `datahut_duckhouse/`), `runs/`
+  (`store.RunLog`, moved from `datahut_duckhouse/ingest_run_log.py`, now
+  also recording a `commits` column; its SQLite fallback path is
+  configurable via `DHD_INGEST_RUN_LOG_DB`). See
+  [docs/INGESTION_ARCHITECTURE.md](docs/INGESTION_ARCHITECTURE.md) for
+  the full layer map, the Sink contract (what each `write_disposition`
+  means for crash recovery), and how to add a source/family/engine/sink.
+- **No behavior change** -- `dhd ingest-dlt`/`dhd sources ...` still do
+  exactly what step 0 left them doing; `datahut_duckhouse/ingest_dlt.py`
+  is now a thin adapter translating `ingestion`'s domain exceptions into
+  CLI-facing ones with the right exit code.
+- Dependency rules (config never imports dlt/connectors/sinks/engine; only
+  `engine/dlt_engine.py` and `connectors/_dlt_sources.py` import dlt;
+  connectors never know sinks/runs; sinks never know dlt/connectors; the
+  CLI adapter only imports `ingestion`'s top-level API; no import cycle)
+  are enforced by an AST-based test, not just documented:
+  `tests/ingestion/test_dependency_rules.py`.
+- Tests mirrored into `tests/ingestion/` alongside the move
+  (`test_config.py`, `test_connectors_{sql,files,rest}.py`,
+  `test_connectors_registry.py`, `test_engine.py`); 149 tests passing
+  (143 before this step, +6 dependency-rule tests, net test count
+  otherwise unchanged -- same coverage, relocated and, for the engine
+  tests, now exercised directly against `DltIngestor` instead of through
+  the CLI).
+
+### `dhd ingest` restructuring (`feat/dhd-ingest`), step 0: visibility
+
+- **Fixed a real bug, reproduced live first**: a table loaded by `dhd
+  ingest-dlt` was written straight to pyiceberg from the client and was
+  **invisible** to `dhd query`/`dhd list-tables` -- two physically
+  different SQLite catalog files (the Flight server's, in a Docker named
+  volume; the client's, on the host). Fix: `replace`/`append` now write
+  through the Flight server itself (`datahut_duckhouse/ingest_sinks.py`'s
+  `FlightSink`, the same action `dhd create-table`/`insert` use), so a
+  table lands exactly where reads already look. Regression test:
+  `tests/test_cli.py::TestCliEndToEnd::test_ingested_table_is_visible_via_flight_query`.
+- `merge` still writes direct via pyiceberg (`DirectSink`) -- no
+  Flight-level upsert exists yet (`HybridBackend.upsert()` is inherited,
+  unmodified, from xorq, but unreachable over the wire). That direct write
+  is now gated by `datahut_duckhouse/catalog_guard.py`: a dynamically
+  registered Flight action (xorq's own `add-action`, no `HybridBackend`
+  change) proves the client and the server share one catalog before
+  allowing it; a mismatch exits **2** with both catalogs named.
+  `schema_contract: evolve` under `append` moved server-side the same way
+  (`schema_evolve_action.py`).
+- This is a real behavior change, stated plainly: `dhd ingest-dlt`/`dhd
+  ingest` now always needs a reachable Flight server, for every
+  `write_disposition` -- previously this command's whole point was to need
+  none. See [docs/INGESTION.md](docs/INGESTION.md)'s rewritten "single
+  writer" section, including the estimate for a real Flight-routed
+  `merge` (not implemented here, per explicit instruction).
+
 ### Follow-up review (same branch)
 
 - `incremental` + `write_disposition: append` is now rejected at

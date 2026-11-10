@@ -1,7 +1,9 @@
 """The ``sql`` connector family (Vague 1b, task 2): dlt's ``sql_database``
 source (SQLAlchemy under the hood -- one driver per dialect: ``sqlite3``
-stdlib, ``psycopg2``, ``pymysql``, ``pymssql``). Carried over from Vague 1's
-``pipeline.py`` almost unchanged, plus incremental-cursor support (task 3).
+stdlib, ``psycopg2``, ``pymysql``, ``pymssql``), via ``_dlt_sources.py`` so
+this module itself never imports ``dlt`` directly. Carried over from
+Vague 1's ``pipeline.py`` almost unchanged, plus incremental-cursor
+support (task 3).
 """
 
 from __future__ import annotations
@@ -13,9 +15,11 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as papq
-from registry import SourceConfig, prefixed_table_name
 
-from connectors import _state
+from ingestion.config.models import SourceConfig
+from ingestion.config.registry import prefixed_table_name
+from ingestion.connectors import _dlt_sources
+from ingestion.engine import state as _state
 
 # dialect -> the pip package providing its SQLAlchemy driver (None = stdlib).
 _DRIVER_PACKAGE: dict[str, str | None] = {
@@ -54,37 +58,30 @@ def check_driver(dialect: str) -> None:
         )
 
 
-def extract_source(source: SourceConfig, work_dir: Path) -> dict[str, Path]:
+def build_resources(source: SourceConfig, work_dir: Path) -> dict[str, Path]:
     """Extract every configured table of ``source`` to Parquet under ``work_dir``.
 
     One Parquet file per table, written in one call (see ``pa.concat_tables``
     below) -- this is what gives task 3's "one Iceberg commit per table per
-    run" its foundation: the loader (``datahut_duckhouse/ingest_dlt.py``)
-    does exactly one create/append/overwrite/upsert per file it finds here.
+    run" its foundation: the engine does exactly one create/append/
+    overwrite/upsert per file it finds here.
     """
     check_driver(source.dialect or "")
 
-    from dlt.sources.sql_database import sql_database
-
-    db_source = sql_database(
+    db_source = _dlt_sources.sql_database_source(
         credentials=source.connection_url,
         schema=source.schema_name,
         table_names=list(source.resources) or None,
-        backend="pyarrow",
     )
 
     inc = source.incremental
     if inc is not None:
-        import dlt
-
         for resource in db_source.resources.values():
             last_value = _decode_cursor(
                 _state.read_last_value(source.name, resource.name), inc.type
             )
             resource.apply_hints(
-                incremental=dlt.sources.incremental(
-                    inc.column, initial_value=last_value
-                )
+                incremental=_dlt_sources.incremental(inc.column, last_value)
             )
 
     work_dir.mkdir(parents=True, exist_ok=True)

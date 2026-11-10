@@ -188,14 +188,16 @@ class TestSalesByCountryConsistentAcrossSources:
 class TestNoDuplicatesOnRerun:
     """`dhd ingest-dlt` loads overwrite, so re-running never duplicates rows
     (step 4's documented default) -- exercised here against a real source,
-    through the actual CLI command, not just the pyiceberg engine directly."""
+    through the actual CLI command. `ingest-dlt` now always writes
+    `replace`/`append` through the Flight server (follow-up review, step 0),
+    so this needs a reachable one -- the shared in-process `flight_server`
+    fixture, queried through the default (flight) engine, not `--engine
+    pyiceberg` (which no longer sees these tables at all, see
+    docs/INGESTION.md's "single writer" section)."""
 
-    def test_ingest_dlt_rerun_does_not_duplicate(self, source, monkeypatch, tmp_path):
-        monkeypatch.setenv("ICEBERG_WAREHOUSE", "")
-        monkeypatch.setenv("ICEBERG_WAREHOUSE_PATH", str(tmp_path / "wh"))
-        monkeypatch.setenv("ICEBERG_NAMESPACE", "default")
-        monkeypatch.delenv("ICEBERG_CATALOG_URI", raising=False)
-        monkeypatch.delenv("DHD_ENGINE", raising=False)
+    def test_ingest_dlt_rerun_does_not_duplicate(
+        self, source, flight_server, monkeypatch
+    ):
         monkeypatch.chdir(Path(__file__).parent.parent.parent)
 
         from datahut_duckhouse import cli as cli_mod
@@ -207,38 +209,20 @@ class TestNoDuplicatesOnRerun:
             else "pg_chinook_customer"
         )
 
-        r1 = runner.invoke(
-            cli_mod.cli,
-            ["--engine", "pyiceberg", "ingest-dlt", "--source", source.name],
-        )
+        r1 = runner.invoke(cli_mod.cli, ["ingest-dlt", "--source", source.name])
         assert r1.exit_code == 0, r1.output
 
         r2 = runner.invoke(
-            cli_mod.cli,
-            [
-                "--engine",
-                "pyiceberg",
-                "query",
-                f"SELECT count(*) AS n FROM {table_name}",
-            ],
+            cli_mod.cli, ["query", f"SELECT count(*) AS n FROM {table_name}"]
         )
         assert r2.exit_code == 0, r2.output
         first_count = r2.output
 
-        r3 = runner.invoke(
-            cli_mod.cli,
-            ["--engine", "pyiceberg", "ingest-dlt", "--source", source.name],
-        )
+        r3 = runner.invoke(cli_mod.cli, ["ingest-dlt", "--source", source.name])
         assert r3.exit_code == 0, r3.output
 
         r4 = runner.invoke(
-            cli_mod.cli,
-            [
-                "--engine",
-                "pyiceberg",
-                "query",
-                f"SELECT count(*) AS n FROM {table_name}",
-            ],
+            cli_mod.cli, ["query", f"SELECT count(*) AS n FROM {table_name}"]
         )
         assert r4.exit_code == 0, r4.output
         assert r4.output == first_count, (

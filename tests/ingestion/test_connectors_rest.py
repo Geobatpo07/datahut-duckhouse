@@ -5,50 +5,32 @@ external API) -- run explicitly with ``-m network``.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
-from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent
+from ingestion.config.registry import get_source
+from ingestion.connectors import rest
 
 pytestmark = pytest.mark.network
 
 
-def _load_pipeline_module():
-    spec = importlib.util.spec_from_file_location(
-        "dlt_pipeline_rest_connector_test",
-        REPO_ROOT / "ingestion" / "dlt" / "pipeline.py",
-    )
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-@pytest.fixture(scope="module")
-def pipeline():
-    return _load_pipeline_module()
-
-
 class TestRestConnectorAgainstRealApis:
-    def test_jsonplaceholder_single_page(self, pipeline, tmp_path):
+    def test_jsonplaceholder_single_page(self, tmp_path):
         import pyarrow.parquet as papq
 
-        source = pipeline.get_source("jsonplaceholder")
-        written = pipeline.extract_source(source, work_dir=tmp_path)
+        source = get_source("jsonplaceholder")
+        written = rest.build_resources(source, work_dir=tmp_path)
         assert set(written) == {"jsonplaceholder_users", "jsonplaceholder_posts"}
         users = papq.read_table(written["jsonplaceholder_users"])
         assert users.num_rows == 10
         assert "email" in users.column_names
 
-    def test_open_brewery_db_paginated(self, pipeline, tmp_path):
+    def test_open_brewery_db_paginated(self, tmp_path):
         import pyarrow.parquet as papq
 
-        source = pipeline.get_source("open_brewery_db")
-        written = pipeline.extract_source(source, work_dir=tmp_path)
+        source = get_source("open_brewery_db")
+        written = rest.build_resources(source, work_dir=tmp_path)
         breweries = papq.read_table(written["open_brewery_db_breweries"])
         # Capped at maximum_page=5 in sources.yml -- more than one page's
         # worth of rows proves pagination actually ran, not just page 1.
@@ -60,26 +42,18 @@ class TestRestSourcesActuallyLoadIntoIceberg:
     """Point 3 of the follow-up review: extraction alone (above) isn't the
     same as `dhd ingest-dlt` actually committing the result into Iceberg --
     exercised here through the real CLI end to end, against the real
-    public APIs, on a throwaway local warehouse."""
+    public APIs. `ingest-dlt` now always writes `replace`/`append` through
+    the Flight server (follow-up review, step 0), so this needs a reachable
+    one -- the shared in-process `flight_server` fixture (conftest.py),
+    queried through the default (flight) engine."""
 
-    @pytest.fixture
-    def pyiceberg_env(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("ICEBERG_WAREHOUSE", "")
-        monkeypatch.setenv("ICEBERG_WAREHOUSE_PATH", str(tmp_path / "wh"))
-        monkeypatch.setenv("ICEBERG_NAMESPACE", "default")
-        monkeypatch.delenv("ICEBERG_CATALOG_URI", raising=False)
-        monkeypatch.delenv("DHD_ENGINE", raising=False)
-
-    def test_jsonplaceholder_loads_and_is_queryable(self, pyiceberg_env):
+    def test_jsonplaceholder_loads_and_is_queryable(self, flight_server):
         from click.testing import CliRunner
 
         from datahut_duckhouse import cli as cli_mod
 
         runner = CliRunner()
-        r = runner.invoke(
-            cli_mod.cli,
-            ["--engine", "pyiceberg", "ingest-dlt", "--source", "jsonplaceholder"],
-        )
+        r = runner.invoke(cli_mod.cli, ["ingest-dlt", "--source", "jsonplaceholder"])
         assert r.exit_code == 0, r.output
         assert "jsonplaceholder_users" in r.output
         assert "jsonplaceholder_posts" in r.output
@@ -87,8 +61,6 @@ class TestRestSourcesActuallyLoadIntoIceberg:
         r = runner.invoke(
             cli_mod.cli,
             [
-                "--engine",
-                "pyiceberg",
                 "query",
                 "SELECT count(*) AS n FROM jsonplaceholder_users",
                 "--format",
@@ -98,7 +70,7 @@ class TestRestSourcesActuallyLoadIntoIceberg:
         assert r.exit_code == 0, r.output
         assert '"n": 10' in r.output
 
-    def test_open_brewery_db_loads_and_rerun_does_not_duplicate(self, pyiceberg_env):
+    def test_open_brewery_db_loads_and_rerun_does_not_duplicate(self, flight_server):
         from click.testing import CliRunner
 
         from datahut_duckhouse import cli as cli_mod
@@ -106,16 +78,13 @@ class TestRestSourcesActuallyLoadIntoIceberg:
         runner = CliRunner()
         for _ in range(2):  # write_disposition: replace -- must not duplicate
             r = runner.invoke(
-                cli_mod.cli,
-                ["--engine", "pyiceberg", "ingest-dlt", "--source", "open_brewery_db"],
+                cli_mod.cli, ["ingest-dlt", "--source", "open_brewery_db"]
             )
             assert r.exit_code == 0, r.output
 
         r = runner.invoke(
             cli_mod.cli,
             [
-                "--engine",
-                "pyiceberg",
                 "query",
                 "SELECT count(*) AS n FROM open_brewery_db_breweries",
                 "--format",

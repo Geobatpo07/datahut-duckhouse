@@ -15,8 +15,7 @@ Two layers:
 
 from __future__ import annotations
 
-import socket
-import time
+from importlib.util import find_spec
 
 import pyarrow as pa
 import pytest
@@ -24,6 +23,8 @@ from click.testing import CliRunner
 
 from datahut_duckhouse import cli as cli_mod
 from datahut_duckhouse.connection import FlightUnavailableError
+
+DLT_AVAILABLE = find_spec("dlt") is not None
 
 
 @pytest.fixture
@@ -131,53 +132,6 @@ class TestCliBehaviour:
         assert "No Flight server" in result.output
 
 
-@pytest.fixture(scope="module")
-def flight_server(tmp_path_factory):
-    """A real in-process Flight server backed by a real HybridBackend."""
-    import os
-
-    d = tmp_path_factory.mktemp("dhd_e2e")
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
-
-    old = {
-        k: os.environ.get(k)
-        for k in (
-            "ICEBERG_WAREHOUSE",
-            "ICEBERG_WAREHOUSE_PATH",
-            "DUCKDB_PATH",
-            "FLIGHT_SERVER_HOST",
-            "FLIGHT_SERVER_PORT",
-        )
-    }
-    # Empty (not absent): a repo-root .env + load_dotenv() would otherwise
-    # repopulate ICEBERG_WAREHOUSE and force this local test onto s3://.
-    os.environ["ICEBERG_WAREHOUSE"] = ""
-    os.environ["ICEBERG_WAREHOUSE_PATH"] = str(d / "wh")
-    os.environ["DUCKDB_PATH"] = str(d / "duckhouse.duckdb")
-    os.environ["FLIGHT_SERVER_HOST"] = "127.0.0.1"
-    os.environ["FLIGHT_SERVER_PORT"] = str(port)
-
-    from flight_server.app.xorq_config import get_flight_server
-
-    server = get_flight_server()
-    server.serve(block=False)
-    time.sleep(1)
-
-    yield port
-
-    try:
-        server.close()
-    except Exception:  # noqa: BLE001 - best effort teardown
-        pass
-    for k, v in old.items():
-        if v is None:
-            os.environ.pop(k, None)
-        else:
-            os.environ[k] = v
-
-
 class TestCliEndToEnd:
     def test_full_ingest_and_query_cycle(self, runner, flight_server, tmp_path):
         src = tmp_path / "sales.csv"
@@ -241,6 +195,41 @@ class TestCliEndToEnd:
         r = runner.invoke(cli_mod.cli, ["drop-table", "ghost", "--yes"])
         assert r.exit_code != 0
         assert "does not exist" in r.output
+
+    def test_ingested_table_is_visible_via_flight_query(
+        self, runner, flight_server, monkeypatch
+    ):
+        """Step 0 of the follow-up review's own repro, as a regression test:
+        before this fix, a table loaded by `dhd ingest-dlt` was written
+        pyiceberg-direct and invisible to `dhd query`/`dhd list-tables`
+        (two different SQLite catalog files) -- reproduced live against the
+        real Docker Flight server on 2026-11-08, see docs/INGESTION.md."""
+        if not DLT_AVAILABLE:
+            pytest.skip("requires optional 'ingest' dependencies")
+        import os
+
+        monkeypatch.setenv(
+            "CHINOOK_SQLITE_URL", "sqlite:///tests/data/Chinook_Sqlite.sqlite"
+        )
+        monkeypatch.chdir(os.path.dirname(os.path.dirname(__file__)))
+
+        r = runner.invoke(cli_mod.cli, ["ingest-dlt", "--source", "sqlite_chinook"])
+        assert r.exit_code == 0, r.output
+
+        r = runner.invoke(cli_mod.cli, ["list-tables"])
+        assert "sqlite_chinook_Album" in r.output
+
+        r = runner.invoke(
+            cli_mod.cli,
+            [
+                "query",
+                "SELECT count(*) AS n FROM sqlite_chinook_Album",
+                "--format",
+                "json",
+            ],
+        )
+        assert r.exit_code == 0, r.output
+        assert '"n": 347' in r.output
 
 
 class TestSourcesCommand:

@@ -5,7 +5,7 @@ Measures wall-clock time per Iceberg commit, via the ``pyiceberg`` engine
 per this session's constraint), for:
 
   (a) real Chinook tables (extracted from the SQLite fixture via
-      ``ingestion/dlt/pipeline.py``) -- one ``create_table`` + one
+      ``ingestion.connectors.sql``) -- one ``create_table`` + one
       ``insert(mode=append)`` + one ``insert(mode=overwrite)`` per table.
   (b) a synthetic dataset at two sizes (default 100_000 and 1_000_000 rows;
       two int/string/float columns), three write patterns:
@@ -47,7 +47,6 @@ import pyarrow as pa
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / "ingestion" / "dlt"))
 
 BATCH_COUNT = 100
 
@@ -176,14 +175,15 @@ def bench_batched_append(
 
 
 def bench_real_chinook(warehouse: str, work_dir: Path) -> list[Measurement]:
-    import pipeline as dlt_pipeline  # ingestion/dlt/pipeline.py, loaded via sys.path above
+    from ingestion.config.registry import get_source
+    from ingestion.connectors import sql as sql_connector
 
     os.environ.setdefault(
         "CHINOOK_SQLITE_URL",
         f"sqlite:///{REPO_ROOT / 'tests' / 'data' / 'Chinook_Sqlite.sqlite'}",
     )
-    source = dlt_pipeline.get_source("sqlite_chinook")
-    extracted = dlt_pipeline.extract_source(
+    source = get_source("sqlite_chinook")
+    extracted = sql_connector.build_resources(
         source, work_dir=work_dir / "chinook_parquet"
     )
 

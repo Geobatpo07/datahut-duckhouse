@@ -1,32 +1,20 @@
-"""Unit tests for ingestion/dlt/registry.py's pydantic schema -- no Docker,
-no network. Exercises validation and the line/field error reporting that
-`dhd sources validate` surfaces.
+"""Unit tests for ``ingestion.config`` (``models.py``/``registry.py``/
+``rules.py``) -- no Docker, no network. Exercises validation and the
+line/field error reporting that ``dhd ingest validate`` surfaces.
 """
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent
-
-
-def _load_registry_module(name: str = "dlt_registry_test"):
-    spec = importlib.util.spec_from_file_location(
-        name, REPO_ROOT / "ingestion" / "dlt" / "registry.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+from ingestion.config import registry as _registry_module
 
 
 @pytest.fixture(scope="module")
 def registry():
-    return _load_registry_module()
+    return _registry_module
 
 
 def _write(tmp_path: Path, content: str) -> Path:
@@ -368,3 +356,36 @@ sources:
         )
         sources = registry.load_sources(path)
         assert registry.get_source("x", sources=sources).name == "x"
+
+
+class TestLoadRealSourcesYml:
+    def test_real_sources_yml_parses(self):
+        from ingestion.config.registry import load_sources
+
+        sources = load_sources()
+        names = {s.name for s in sources}
+        assert names == {
+            "sqlite_chinook",
+            "pg_chinook",
+            "mysql_chinook",
+            "mssql_chinook",
+            "pg_chinook_customers_incremental",
+            "disease_symptoms_csv",
+            "sample_products_json",
+            "jsonplaceholder",
+            "open_brewery_db",
+        }
+        by_name = {s.name: s for s in sources}
+        assert by_name["pg_chinook"].family == "sql"
+        assert by_name["pg_chinook"].dialect == "postgresql"
+        assert by_name["pg_chinook"].secret_ref == "CHINOOK_POSTGRES_URL"
+        assert by_name["pg_chinook"].schema_name == "public"
+        assert by_name["pg_chinook"].resources == []
+        assert by_name["disease_symptoms_csv"].family == "files"
+        assert by_name["jsonplaceholder"].family == "rest"
+        assert by_name["jsonplaceholder"].network is True
+
+    def test_prefixed_table_name_format(self):
+        from ingestion.config.registry import prefixed_table_name
+
+        assert prefixed_table_name("pg_chinook", "album") == "pg_chinook_album"

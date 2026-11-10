@@ -18,6 +18,7 @@ import pyarrow.csv as pacsv
 import pyarrow.json as pajson
 import pyarrow.parquet as papq
 
+import ingestion.cli
 from datahut_duckhouse import __version__
 from datahut_duckhouse.connection import FlightUnavailableError, connect, flight_target
 from datahut_duckhouse.flight_version_guard import FlightPythonVersionMismatchError
@@ -104,6 +105,14 @@ def _resolve_engine(ctx: click.Context) -> str:
     return engine
 
 
+class _ConfigClickException(click.ClickException):
+    """A ``click.ClickException`` that exits 2, not 1 -- a configuration
+    problem (bad registry, missing secret, mismatched catalog), not a run
+    failure."""
+
+    exit_code = 2
+
+
 def _connect_or_die(ctx: click.Context):
     engine = _resolve_engine(ctx)
     try:
@@ -122,6 +131,15 @@ def _connect_or_die(ctx: click.Context):
         raise click.ClickException(str(exc)) from exc
 
 
+def _pyiceberg_connect():
+    from datahut_duckhouse.ingest import connect as ingest_connect
+
+    return ingest_connect()
+
+
+ingestion.cli.configure(connect, _pyiceberg_connect)
+
+
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, prog_name="dhd")
 @click.option(
@@ -136,6 +154,9 @@ def _connect_or_die(ctx: click.Context):
 def cli(ctx: click.Context, engine: str | None) -> None:
     """DataHut-DuckHouse CLI - drive the Flight server (Iceberg + DuckDB)."""
     ctx.obj = {"engine": engine}
+
+
+cli.add_command(ingestion.cli.ingest_group)
 
 
 @cli.command("list-tables")
@@ -271,14 +292,20 @@ def ingest_dlt(source_name: str | None, run_all: bool, dry_run: bool) -> None:
     """Extract a dlt-configured source (sql/files/rest family) and load it into
     Iceberg.
 
-    Always uses the pyiceberg engine, independent of --engine/DHD_ENGINE:
-    this is a serverless batch load, so no Flight server is needed at all --
-    not a workaround for the flight engine (see README's Python-version
-    matrix section for the one thing that engine does need: a client and
-    server on the same Python minor version). Each source's write_disposition
-    (ingestion/dlt/sources.yml) controls whether a re-run replaces, appends,
-    or merges -- see docs/INGESTION.md.
+    Requires a reachable Flight server independent of --engine/DHD_ENGINE:
+    ``replace``/``append`` are written through it (the same path ``dhd
+    create-table``/``dhd insert`` use), so the result is visible to ``dhd
+    query``/``dhd list-tables`` right away. ``merge`` still writes directly
+    via pyiceberg, but only once this client is proven to share the Flight
+    server's own Iceberg catalog -- otherwise this exits with code 2. Each
+    source's write_disposition (ingestion/config/sources.yml) controls
+    whether a re-run replaces, appends, or merges -- see docs/INGESTION.md.
     """
+    click.echo(
+        "warning: `dhd ingest-dlt` is deprecated, use `dhd ingest run` "
+        "(--source NAME -> SOURCE_NAME positional, --all stays --all).",
+        err=True,
+    )
     if source_name and run_all:
         raise click.ClickException("Pass either --source NAME or --all, not both.")
     if not source_name and not run_all:
@@ -286,13 +313,15 @@ def ingest_dlt(source_name: str | None, run_all: bool, dry_run: bool) -> None:
     target = "all" if run_all else source_name
     assert target is not None  # guaranteed by the pass/not-both checks above
 
-    from datahut_duckhouse.ingest_dlt import IngestDltError
+    from datahut_duckhouse.ingest_dlt import IngestConfigError, IngestDltError
 
     if dry_run:
         from datahut_duckhouse.ingest_dlt import plan_ingest_dlt
 
         try:
             sources = plan_ingest_dlt(target)
+        except IngestConfigError as exc:
+            raise _ConfigClickException(str(exc)) from exc
         except IngestDltError as exc:
             raise click.ClickException(str(exc)) from exc
         for source in sources:
@@ -313,6 +342,8 @@ def ingest_dlt(source_name: str | None, run_all: bool, dry_run: bool) -> None:
 
     try:
         results = run_ingest_dlt(target)
+    except IngestConfigError as exc:
+        raise _ConfigClickException(str(exc)) from exc
     except IngestDltError as exc:
         raise click.ClickException(str(exc)) from exc
     if not results:
@@ -324,19 +355,22 @@ def ingest_dlt(source_name: str | None, run_all: bool, dry_run: bool) -> None:
 
 @cli.group()
 def sources() -> None:
-    """Inspect ingestion/dlt/sources.yml (the source registry)."""
+    """Deprecated: use `dhd ingest list`/`dhd ingest validate` instead."""
 
 
 @sources.command("validate")
 def sources_validate() -> None:
-    """Validate sources.yml against the registry schema (readable line/field errors)."""
-    from datahut_duckhouse.ingest_dlt import _load_pipeline
+    """Deprecated, use `dhd ingest validate`. Validate sources.yml against
+    the registry schema (readable line/field errors)."""
+    click.echo(
+        "warning: `dhd sources validate` is deprecated, use " "`dhd ingest validate`.",
+        err=True,
+    )
+    from ingestion import SourcesConfigError, validate_registry
 
-    pipeline = _load_pipeline()
-    warnings: list[str] = []
     try:
-        configs = pipeline.load_sources(collect_warnings=warnings)
-    except pipeline.SourcesConfigError as exc:
+        configs, warnings = validate_registry()
+    except SourcesConfigError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(f"OK: {len(configs)} source(s) valid.")
     for config in configs:
@@ -347,13 +381,17 @@ def sources_validate() -> None:
 
 @sources.command("list")
 def sources_list() -> None:
-    """List configured sources: name, family, connector, write_disposition, schedule, network."""
-    from datahut_duckhouse.ingest_dlt import _load_pipeline
+    """Deprecated, use `dhd ingest list`. List configured sources: name,
+    family, connector, write_disposition, schedule, network."""
+    click.echo(
+        "warning: `dhd sources list` is deprecated, use `dhd ingest list`.",
+        err=True,
+    )
+    from ingestion import SourcesConfigError, list_sources
 
-    pipeline = _load_pipeline()
     try:
-        configs = pipeline.load_sources()
-    except pipeline.SourcesConfigError as exc:
+        configs = list_sources()
+    except SourcesConfigError as exc:
         raise click.ClickException(str(exc)) from exc
     if not configs:
         click.echo("(no sources configured)")
