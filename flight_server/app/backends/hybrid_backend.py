@@ -65,6 +65,7 @@ class HybridBackend(PyIcebergBackend):
         catalog_name: str = "default",
         catalog_type: str = "sql",
         catalog_uri: str | None = None,
+        catalog_branch: str | None = None,
         s3_endpoint: str | None = None,
         s3_access_key: str | None = None,
         s3_secret_key: str | None = None,
@@ -98,6 +99,7 @@ class HybridBackend(PyIcebergBackend):
 
         self.catalog_params = self._build_catalog_params(
             catalog_type=catalog_type,
+            catalog_branch=catalog_branch or _env("ICEBERG_BRANCH") or "main",
             s3_endpoint=s3_endpoint,
             s3_access_key=s3_access_key,
             s3_secret_key=s3_secret_key,
@@ -137,7 +139,23 @@ class HybridBackend(PyIcebergBackend):
         s3_secret_key: str | None,
         s3_region: str | None,
         s3_path_style: bool | None,
+        catalog_branch: str = "main",
     ) -> dict:
+        """Catalog-connection parameters, dispatched by ``catalog_type``.
+
+        ``rest`` (Nessie) is a distinct shape, not a variant of ``sql``: a
+        REST catalog already knows its warehouse location server-side (see
+        ``NESSIE_CATALOG_DEFAULT_WAREHOUSE``) and rejects a client-supplied
+        ``warehouse`` property outright ("Warehouse ... is not known" --
+        docs/spikes/NESSIE_SPIKES_2.md, T5). Branch/reference selection is a
+        ``prefix`` property instead, which the ``sql`` catalog type has no
+        equivalent of.
+        """
+        if catalog_type == "rest":
+            return self._build_rest_catalog_params(
+                catalog_branch, s3_endpoint, s3_access_key, s3_secret_key, s3_region
+            )
+
         params = {
             "type": catalog_type,
             "uri": self.uri,
@@ -168,6 +186,43 @@ class HybridBackend(PyIcebergBackend):
             params["s3.secret-access-key"] = secret_key
         if s3_path_style:
             params["s3.path-style-access"] = "true"
+
+        return params
+
+    def _build_rest_catalog_params(
+        self,
+        catalog_branch: str,
+        s3_endpoint: str | None,
+        s3_access_key: str | None,
+        s3_secret_key: str | None,
+        s3_region: str | None,
+    ) -> dict:
+        """No ``warehouse`` (the REST catalog already has one configured
+        server-side); ``prefix`` selects the Nessie reference instead (not
+        baked into the URI -- docs/spikes/NESSIE_SPIKES.md, S0). The S3
+        properties are still passed: Nessie's per-table config overrides them
+        for actual data writes (docs/spikes/NESSIE_SPIKES_2.md, T1), but the
+        catalog connection itself (namespace listing, table creation) still
+        needs them client-side.
+        """
+        params: dict = {
+            "type": "rest",
+            "uri": self.uri,
+            "prefix": catalog_branch,
+        }
+
+        endpoint = s3_endpoint or _env("S3_ENDPOINT", "AWS_ENDPOINT_URL_S3")
+        access_key = s3_access_key or _env("AWS_ACCESS_KEY_ID")
+        secret_key = s3_secret_key or _env("AWS_SECRET_ACCESS_KEY")
+        region = s3_region or _env("AWS_REGION", "AWS_DEFAULT_REGION") or "us-east-1"
+
+        params["s3.region"] = region
+        if endpoint:
+            params["s3.endpoint"] = endpoint
+            params["s3.path-style-access"] = "true"
+        if access_key and secret_key:
+            params["s3.access-key-id"] = access_key
+            params["s3.secret-access-key"] = secret_key
 
         return params
 
