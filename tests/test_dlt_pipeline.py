@@ -129,7 +129,7 @@ class TestMissingDriver:
         )
         pipeline._check_driver("sqlite")  # does not raise
 
-    def test_installed_driver_passes(self, pipeline):
+    def test_installed_driver_passes(self, pipeline, monkeypatch):
+        monkeypatch.setattr(pipeline, "find_spec", lambda name: object())
         pipeline._check_driver("sqlite")
-        # psycopg2-binary is installed via the `ingest` extra in this env.
         pipeline._check_driver("postgresql")
