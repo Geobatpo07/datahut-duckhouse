@@ -7,6 +7,8 @@ Per-family extraction correctness against real data is
 
 from __future__ import annotations
 
+from importlib.util import find_spec
+
 import pytest
 
 from ingestion import extract_source
@@ -67,6 +69,7 @@ class TestMissingDriver:
     def test_installed_driver_passes(self):
         from ingestion.connectors import sql as sql_connector
 
+        if find_spec("psycopg2") is None:
+            pytest.skip("requires optional 'ingest' dependencies")
         sql_connector.check_driver("sqlite")
-        # psycopg2-binary is installed via the `ingest` extra in this env.
         sql_connector.check_driver("postgresql")

@@ -15,12 +15,16 @@ Two layers:
 
 from __future__ import annotations
 
+from importlib.util import find_spec
+
 import pyarrow as pa
 import pytest
 from click.testing import CliRunner
 
 from datahut_duckhouse import cli as cli_mod
 from datahut_duckhouse.connection import FlightUnavailableError
+
+DLT_AVAILABLE = find_spec("dlt") is not None
 
 
 @pytest.fixture
@@ -200,6 +204,8 @@ class TestCliEndToEnd:
         pyiceberg-direct and invisible to `dhd query`/`dhd list-tables`
         (two different SQLite catalog files) -- reproduced live against the
         real Docker Flight server on 2026-11-08, see docs/INGESTION.md."""
+        if not DLT_AVAILABLE:
+            pytest.skip("requires optional 'ingest' dependencies")
         import os
 
         monkeypatch.setenv(

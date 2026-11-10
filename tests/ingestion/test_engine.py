@@ -46,13 +46,11 @@ def _matching_pyiceberg_env(flight_server, monkeypatch):
     monkeypatch.delenv("DHD_ENGINE", raising=False)
     monkeypatch.setenv("ICEBERG_NAMESPACE", "default")
 
-    from datahut_duckhouse.ingest import connect as ingest_connect
-    from ingestion.runs.models import RUN_LOG_TABLE
+    from datahut_duckhouse.connection import connect as flight_connect
 
-    engine = ingest_connect()
-    for table_name in ("s_t", RUN_LOG_TABLE):
-        if table_name in engine.list_tables():
-            engine.drop_table(table_name)
+    backend = flight_connect()
+    for table_name in backend.list_tables():
+        backend.drop_table(table_name)
 
 
 def _make_source(**overrides):

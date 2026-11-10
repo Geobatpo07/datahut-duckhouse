@@ -17,6 +17,7 @@ Two layers, same split as ``tests/test_cli.py``:
 
 from __future__ import annotations
 
+from importlib.util import find_spec
 import os
 
 import pytest
@@ -25,6 +26,8 @@ from click.testing import CliRunner
 import ingestion
 import ingestion.cli
 from datahut_duckhouse import cli as cli_mod
+
+DLT_AVAILABLE = find_spec("dlt") is not None
 
 
 @pytest.fixture
@@ -250,6 +253,8 @@ class TestRealFlightServer:
 
     @pytest.fixture(autouse=True)
     def _sqlite_env(self, flight_server):
+        if not DLT_AVAILABLE:
+            pytest.skip("requires optional 'ingest' dependencies")
         os.environ.setdefault(
             "CHINOOK_SQLITE_URL", "sqlite:///tests/data/Chinook_Sqlite.sqlite"
         )
