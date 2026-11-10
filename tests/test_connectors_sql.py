@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
+pytest.importorskip("dlt", reason="requires optional 'ingest' dependencies")
 
 
 def _load_pipeline_module():
