@@ -23,6 +23,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+import pyarrow as pa
 import pyarrow.parquet as papq
 
 from ingestion.config.models import SourceConfig, SourcesConfigError
@@ -36,6 +37,18 @@ from ingestion.sinks.direct_sink import DirectSink
 from ingestion.sinks.flight_sink import FlightSink
 
 DEFAULT_WORK_DIR = Path(__file__).resolve().parent.parent / "_pipeline_data"
+
+# fix/ingest-batching-grpc, part B: xorq's do_put doesn't bound its error
+# messages the way do_exchange does (xorq/flight/server.py's
+# bounded_status) -- a server-side exception whose message+traceback
+# exceeds gRPC's status-metadata budget (~4KB on the wire) reaches the
+# client as this exact, stable gRPC-level message instead of the real
+# Python exception. Reproduced live (docs/DLT_EVAL.md's part B section)
+# via a genuine schema mismatch across many columns; not something this
+# project's code can fix (xorq is a third-party dependency) -- caught
+# below so it at least becomes an actionable, logged SinkError instead of
+# an opaque crash.
+_GRPC_METADATA_OVERFLOW_MARKER = "metadata size exceeds limit"
 
 
 class ConnectorError(RuntimeError):
@@ -54,6 +67,7 @@ class DltIngestor:
         self.flight_backend = flight_backend
         self._pyiceberg_connect = pyiceberg_connect
         self.work_dir = work_dir
+        self._echo = run_log_echo
         self.run_log = RunLog(flight_backend, echo=run_log_echo)
         self._flight_sink = FlightSink(flight_backend)
         self._direct_sink: DirectSink | None = None
@@ -102,16 +116,8 @@ class DltIngestor:
         for table_name, parquet_path in written.items():
             table_t0 = time.time()
             try:
-                data = papq.read_table(parquet_path)
-                if table_name in sink.list_tables() and source.schema_contract:
-                    data = sink.apply_schema_contract(
-                        table_name, data, source.schema_contract
-                    )
-                verb = sink.write(
-                    table_name,
-                    data,
-                    write_disposition=source.write_disposition,
-                    primary_key=source.primary_key,
+                verb, rows_written, commits = self._write_table(
+                    sink, source, table_name, parquet_path
                 )
             except (SchemaContractViolationError, SinkError) as exc:
                 message = source.redact(
@@ -124,9 +130,82 @@ class DltIngestor:
                 )
                 raise type(exc)(message) from exc
             result.tables.append(
-                TableResult(table=table_name, verb=verb, rows=data.num_rows)
+                TableResult(table=table_name, verb=verb, rows=rows_written, commits=commits)
             )
             self.run_log.record(
-                source.name, table_name, table_t0, time.time(), data.num_rows, "ok"
+                source.name,
+                table_name,
+                table_t0,
+                time.time(),
+                rows_written,
+                "ok",
+                commits=commits,
             )
         return result
+
+    def _write_table(
+        self, sink, source: SourceConfig, table_name: str, parquet_path: Path
+    ) -> tuple[str, int, int]:
+        """Writes one table's Parquet file through ``sink``, in
+        ``source.batch_rows``-sized Arrow batches for ``append``/``merge``
+        (one commit per batch) -- never for ``replace``, which always
+        forces a single commit regardless of ``batch_rows`` (see
+        ``ingestion/sinks/base.py``'s docstring for why). Returns ``(verb,
+        rows_written, commits)``.
+        """
+        batch_rows = source.batch_rows
+        if source.write_disposition == "replace":
+            if batch_rows is not None:
+                self._echo(
+                    f"warning: '{table_name}': write_disposition 'replace' "
+                    f"always commits once -- batch_rows={batch_rows} is "
+                    f"ignored (no safe multi-commit replace strategy; see "
+                    f"ingestion/sinks/base.py)."
+                )
+            data = papq.read_table(parquet_path)
+            verb = self._write_chunk(sink, source, table_name, data)
+            return verb, data.num_rows, 1
+
+        if batch_rows is None:
+            data = papq.read_table(parquet_path)
+            verb = self._write_chunk(sink, source, table_name, data)
+            return verb, data.num_rows, 1
+
+        rows_written = 0
+        commits = 0
+        verb = "appended" if source.write_disposition == "append" else "merged"
+        for batch in papq.ParquetFile(parquet_path).iter_batches(batch_size=batch_rows):
+            chunk = pa.Table.from_batches([batch])
+            verb = self._write_chunk(sink, source, table_name, chunk)
+            rows_written += chunk.num_rows
+            commits += 1
+        return verb, rows_written, commits
+
+    def _write_chunk(
+        self, sink, source: SourceConfig, table_name: str, data: pa.Table
+    ) -> str:
+        if table_name in sink.list_tables() and source.schema_contract:
+            data = sink.apply_schema_contract(table_name, data, source.schema_contract)
+        try:
+            return sink.write(
+                table_name,
+                data,
+                write_disposition=source.write_disposition,
+                primary_key=source.primary_key,
+            )
+        except pa.lib.ArrowException as exc:
+            if _GRPC_METADATA_OVERFLOW_MARKER in str(exc):
+                raise SinkError(
+                    f"'{table_name}': the Flight server rejected this write "
+                    f"with a gRPC 'metadata size exceeds limit' error -- the "
+                    f"real server-side exception was too large to fit gRPC's "
+                    f"status-metadata budget and was replaced by this opaque "
+                    f"one (grpc_status=8 RESOURCE_EXHAUSTED). Likely cause: a "
+                    f"schema mismatch across many columns, or another error "
+                    f"whose message+traceback exceeds ~4KB. Check the Flight "
+                    f"server's own logs for the actual exception -- it is "
+                    f"never sent to the client for this RPC (xorq's do_put "
+                    f"doesn't bound its error messages the way do_exchange "
+                    f"does; see xorq/flight/server.py's bounded_status)."
+                ) from exc
+            raise

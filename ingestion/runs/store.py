@@ -34,6 +34,23 @@ _DEFAULT_FALLBACK_DB = (
     Path(__file__).resolve().parent.parent / "_state" / "ingest_runs.db"
 )
 
+# fix/ingest-batching-grpc, part B: a long error message is itself a row
+# *value* here (travels in the do_put body, not gRPC metadata) and that
+# alone doesn't trigger the "metadata size exceeds limit" failure this
+# bounds against -- but an unbounded error string is still bad hygiene for
+# a log table, and keeping it short removes one more variable the next
+# time this class of gRPC failure needs diagnosing. See
+# docs/DLT_EVAL.md's part B section and dlt_engine.py's own handling of
+# the gRPC-side failure for the actual fix.
+_MAX_ERROR_CHARS = 4000
+
+
+def _bounded_error(error: str | None) -> str | None:
+    if error is None or len(error) <= _MAX_ERROR_CHARS:
+        return error
+    elided = len(error) - _MAX_ERROR_CHARS
+    return f"{error[:_MAX_ERROR_CHARS]} [... {elided} more chars truncated ...]"
+
 
 def _fallback_db() -> Path:
     override = os.getenv("DHD_INGEST_RUN_LOG_DB")
@@ -150,7 +167,7 @@ class RunLog:
             "rows": rows,
             "commits": commits,
             "status": status,
-            "error": error,
+            "error": _bounded_error(error),
         }
         if not self._use_sqlite:
             try:

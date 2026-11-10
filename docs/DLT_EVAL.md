@@ -196,6 +196,174 @@ aujourd'hui -- fragmentation, pas concurrence) et une alternative proposée
 servi à supprimer la table `synthetic_100k_flight` que ce test avait
 laissée dans l'entrepôt MinIO partagé du conteneur.
 
+## 6. `batch_rows` en production (fix/ingest-batching-grpc, part A)
+
+Les sections 4-5 ci-dessus mesuraient un `iceberg_table.append()`
+**pyiceberg direct**, sans passer par Flight. `batch_rows` est maintenant
+câblé dans `ingestion.engine.dlt_engine` (chaque lot devient son propre
+commit, un par appel à `sink.write`, *jamais* pour `replace` -- voir
+`ingestion/sinks/base.py`). Remesuré ici avec le **vrai chemin de
+production** (`DltIngestor.run()` -> `FlightSink` -> `do_put` -> vrai
+`HybridBackend` en mémoire, serveur Flight in-process sur un port local,
+même technique que `tests/conftest.py::flight_server`, pas de mock) :
+même table synthétique que la section 4 (`id: int64`, `name: string`,
+`amount: float64`, `flag: bool`), 10M lignes, `write_disposition:
+append`, RSS pic échantillonné par `psutil` toutes les 50ms, chaque
+scénario lancé dans un processus `python` neuf (`scripts/spikes/` --
+non, ce script n'est pas commité, voir ci-dessous) pour une mesure
+RSS propre.
+
+| `batch_rows` | Lots | Total | RSS pic | Commits |
+|---|---|---|---|---|
+| `null` (désactivé) | 1 | 14.880s | 1138.7 MiB | 1 |
+| `500_000` | 20 | 20.179s | 1511.7 MiB | 20 |
+
+**Résultat inattendu, vérifié, qui inverse la conclusion de la section
+4 : `batch_rows` est ici *plus lent et consomme plus de mémoire*, pas
+moins -- 20 commits coûtent plus cher que 1, dans ce chemin précis.**
+Root cause identifiée en lisant `flight_server/app/backends/
+hybrid_backend.py` (code serveur xorq/HybridBackend, non modifié,
+conformément à la consigne) : `create_table`/`insert` appellent, à
+*chaque* écriture, sans condition :
+
+1. `_reflect_views()` (ligne ~236-241) : relit **la table entière**
+   depuis Iceberg (`iceberg_table.scan().to_arrow()`) pour la
+   réenregistrer comme vue DuckDB -- pas seulement le lot qui vient
+   d'être écrit.
+2. `_create_snapshot()` : `CHECKPOINT` puis `EXPORT DATABASE ... (FORMAT
+   PARQUET)` -- un export complet de la base DuckDB entière sur disque.
+
+Avec 1 commit, ce coût (relire + exporter ~10M lignes) n'est payé
+qu'une fois. Avec 20 commits sur une table qui grossit de 500k lignes à
+chaque lot, ce même travail -- proportionnel à la taille *courante* de
+la table, pas à la taille du lot -- est payé 20 fois sur une table de
+taille croissante, confirmé par la trace RSS (croissance quasi-linéaire
+et monotone pendant toute la durée du run, jamais de redescente entre
+deux lots -- pas en dents de scie comme on l'attendrait si la mémoire
+du lot précédent était libérée) :
+
+```
+t= 0.0s  rss= 239.8 MiB      (baseline)
+t= 1.0s  rss= 457.0 MiB
+t= 3.1s  rss= 696.7 MiB
+t= 6.2s  rss=1130.1 MiB
+t=11.3s  rss=1492.7 MiB      (dernier lot)
+```
+
+**Pas une régression de ce correctif** -- `_reflect_views`/
+`_create_snapshot` tournent déjà après *chaque* `create_table`/`insert`
+aujourd'hui, avec ou sans `batch_rows` ; brancher `batch_rows` ne fait
+qu'augmenter le nombre d'écritures par run, donc le nombre de fois où
+ce coût déjà existant est payé. Avant ce correctif, une source ne
+pouvait de toute façon committer qu'une fois par table par run -- ce
+coût n'était donc jamais multiplié.
+
+**Conséquence pratique pour le choix de `batch_rows` :** préférer peu
+de lots gros (ou désactiver `batch_rows` -- `null`) tant que
+`HybridBackend` reflète/snapshotte sur *chaque* écriture plutôt que sur
+le run entier. Le gain mémoire théorique d'Arrow (section 4 : -60% en
+pyiceberg direct) reste réel côté *client*, mais est aujourd'hui dominé
+côté *serveur* par ce coût à chaque commit dès qu'il y a plus de
+quelques lots. Proposé, non appliqué (hors périmètre -- interdiction de
+toucher `HybridBackend`) : ne reflex/snapshotter qu'après le *dernier*
+lot d'un run, ou rendre ces deux opérations asynchrones/différées.
+
+Script de mesure non commité (one-off, dans le répertoire scratch de la
+session, pas dans le dépôt) ; commande et méthode reproductibles
+ci-dessus si besoin de la relancer.
+
+## 7. Erreur gRPC « metadata size » (fix/ingest-batching-grpc, part B)
+
+**Reproduite en direct**, serveur Flight in-process réel (même technique
+que `tests/conftest.py::flight_server`, pas de mock) : créer une table
+de 4000 colonnes `int64`, puis tenter d'y `append`-er 4000 colonnes de
+même nom mais en `string` (incompatibilité de schéma réelle, pas une
+valeur artificiellement énorme). Message client exact obtenu :
+
+```
+gRPC returned resource exhausted error, with message: received initial
+metadata size exceeds limit. gRPC client debug context:
+UNKNOWN:Error received from peer ipv4:127.0.0.1:49677
+{created_time:"...", grpc_status:8,
+ grpc_message:"received initial metadata size exceeds limit"}.
+Client context: OK
+```
+
+327 caractères côté client -- c'est tout ce qui arrive ; `grpc_status:8`
+= `RESOURCE_EXHAUSTED`. La vraie exception pyiceberg (incompatibilité de
+schéma sur 4000 colonnes, avec un tableau diff et une trace qui dépasse
+largement 4 Ko une fois sérialisés) n'atteint jamais le client -- **elle
+est masquée, pas seulement tronquée.**
+
+**Cause racine confirmée en lisant `xorq/flight/server.py`** (dépendance
+tierce, non modifiée) :
+
+```python
+# gRPC caps the status trailers at 8 KB, and the message travels in them
+# twice (percent-encoded grpc-message plus the binary status detail):
+# 4 000 ASCII characters already overflow, [...]
+STATUS_MESSAGE_BUDGET = 1024
+
+def bounded_status(f):
+    """Re-raise any failure as a FlightServerError that fits the status.
+    A plain Python exception reaches the client only if its message plus
+    traceback fit gRPC's metadata cap; past that, the client sees
+    "received initial metadata size exceeds limit" and nothing else."""
+    ...
+```
+
+`do_exchange` est décoré avec `@bounded_status` ; **`do_put` ne l'est
+pas.** C'est tout le bug : n'importe quelle exception serveur pendant un
+`do_put` dont le message+trace dépasse ~4 Ko sur le fil remplace la
+vraie cause par ce message gRPC opaque.
+
+**Hypothèses du brief, testées :**
+- *Message d'erreur trop long renvoyé par le serveur* -- **confirmé**,
+  c'est la cause exacte (ci-dessus).
+- *Schéma très large* -- confirmé comme déclencheur dans cette
+  reproduction (4000 colonnes), mais le schéma lui-même n'est pas la
+  cause : c'est le message d'erreur *décrivant* le désaccord de schéma
+  qui est trop long, pas le schéma transmis normalement (qui voyage
+  dans le corps IPC, pas en métadonnées gRPC).
+- *Valeur volumineuse passée en métadonnée* -- non confirmé comme
+  mécanisme direct ; la seule métadonnée gRPC réelle en jeu ici est le
+  statut d'erreur du serveur, pas une valeur de colonne.
+
+**Une écriture de DONNÉES réelle est tout aussi exposée que le journal**
+(vérifié ci-dessus : la reproduction est une vraie `append` de données,
+pas le run log) -- les deux passent par le même `do_put`. Et oui,
+l'erreur masque la vraie cause d'un autre échec : sans accès aux logs du
+serveur, le client ne voit jamais que c'était un désaccord de schéma.
+
+**Corrigé côté client** (la cause est serveur/xorq, donc pas touchée --
+voir `ingestion/engine/dlt_engine.py::_write_chunk` et
+`ingestion/runs/store.py`) :
+1. Le moteur détecte la signature `"metadata size exceeds limit"` dans
+   une `pyarrow.lib.ArrowException` levée pendant une écriture et la
+   relève comme un `SinkError` explicite ("vérifie les logs du serveur
+   Flight") au lieu de laisser planter tout le run de façon opaque et
+   non journalisée.
+2. `RunLog.record()` borne désormais la longueur d'un `error` enregistré
+   (4000 caractères) -- hygiène générale, indépendante de la cause
+   précise ci-dessus (une valeur de ligne ne déclenche pas ce bug
+   directement, mais rien n'empêche qu'un message d'erreur déjà énorme
+   serve ensuite de valeur à journaliser).
+
+**Proposé côté serveur xorq, non appliqué** (hors périmètre -- ce
+dépôt ne doit pas modifier `xorq`) : ajouter `@bounded_status` à
+`do_put`, exactement comme `do_exchange` l'a déjà.
+
+**Piège Windows en bonus (non lié au bug principal) :** le script de
+reproduction direct (pyiceberg sans Flight, pour mesurer la taille réelle
+du message masqué) a une fois crashé avec `UnicodeEncodeError: 'charmap'
+codec can't encode character '❌'` -- pyiceberg imprime un emoji
+❌ dans son tableau diff de comparaison de schéma, qui casse sur une
+console Windows en code page héritée (cp1252/charmap). Observé une
+seule fois (pas reproduit de façon fiable au deuxième essai, qui a
+donné le `ArrowInvalid`/gRPC attendu à la place) -- noté comme piège
+Windows possible, pas creusé davantage (bibliothèque tierce,
+non modifiée).
+
 ## Non vérifié
 
 - SQL Server (`mssql_chinook`) : toujours scaffolded, jamais lancé (voir
@@ -212,6 +380,22 @@ laissée dans l'entrepôt MinIO partagé du conteneur.
   (testé seulement avec `replace`/`append` en pratique ici ; couvert en
   unitaire pour `merge` dans `tests/test_ingest_dlt.py`, mais pas rejoué
   ici contre une vraie source Postgres élargie).
+- `batch_rows` (section 6) : le test d'interruption réel (kill -9 d'un
+  processus) à 10M lignes -- seul un échec simulé (sink.write qui lève)
+  a été testé, pas un vrai process tué entre deux lots sur ce volume.
+  `write_disposition: merge` à 10M lignes avec `batch_rows` n'a pas été
+  mesuré pour la mémoire/durée (seul `append` l'a été ci-dessus) ; le
+  coût `_reflect_views`/`_create_snapshot` par commit s'y applique
+  probablement de la même façon mais ce n'est pas vérifié. Pas d'autre
+  valeur de `batch_rows` que 500 000 et `null` essayée.
+- Erreur gRPC (section 7) : le seuil exact (nombre de colonnes/octets)
+  où ça bascule n'a pas été cherché par dichotomie -- seulement vérifié
+  que 4000 colonnes le déclenche de façon fiable et qu'un message court
+  ne le déclenche pas. Pas reproduit via Docker/MinIO réel (seulement
+  in-process) -- improbable que ça change quelque chose (le bug est
+  dans la couche gRPC/xorq, pas le stockage), mais pas vérifié.
+  L'incident Windows `UnicodeEncodeError` (pyiceberg) n'est vérifié
+  qu'une fois, pas de façon fiable.
 
 ## Décision recommandée
 

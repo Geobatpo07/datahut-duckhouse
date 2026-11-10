@@ -68,6 +68,17 @@ def check_write_disposition(source: SourceConfig) -> None:
         )
 
 
+def check_batch_rows(source: SourceConfig) -> None:
+    """``batch_rows`` must be a positive count or ``null`` (chunking off).
+    Caught here, not left to blow up later as a ``ValueError`` from
+    ``pyarrow.parquet.ParquetFile.iter_batches(batch_size=...)``."""
+    if source.batch_rows is not None and source.batch_rows <= 0:
+        raise ValueError(
+            f"'{source.name}': batch_rows must be a positive integer or "
+            f"null (got {source.batch_rows!r})."
+        )
+
+
 def check_family_fields(source: SourceConfig) -> None:
     """Each family's own required fields -- the part of validation that is
     specific to ``sql``/``files``/``rest``, not shared across families."""

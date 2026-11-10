@@ -20,6 +20,32 @@ behavior* of a write:
   committed. The one gap: a row deleted at the source is never detected
   (there is no cursor value a deleted row could report) -- verified live,
   see docs/DLT_EVAL.md.
+
+``batch_rows`` (fix/ingest-batching-grpc, part A) splits one table's data
+into several Arrow batches, each written through :meth:`Sink.write` as its
+own call -- so each batch is its own Iceberg commit, not one commit for
+the whole table. The engine (``ingestion.engine.dlt_engine``), not this
+module, owns the batch loop; a ``Sink`` only ever sees one ``pa.Table`` at
+a time and has no idea whether it's the only one or one of many. What
+that means per disposition, if the process is killed between two batches:
+
+- ``append``: every batch committed before the kill is durable and stays.
+  Re-running from scratch re-extracts and re-appends *all* batches,
+  including the ones that already landed -- the same "not safe to
+  blindly re-run" gap as a single-batch append, just with partial credit
+  instead of all-or-nothing.
+- ``merge``: every batch committed before the kill is durable, and
+  because each batch upserts by primary key, re-running from scratch
+  re-merges every batch (committed or not) without duplicating or losing
+  a row. Composes safely across batches for exactly the reason a single
+  merge is idempotent.
+- ``replace``: deliberately **not** batched. A multi-commit replace would
+  mean each batch *overwrites* the table with just that batch's rows,
+  leaving only the last batch's data once the run finishes -- there is no
+  safe multi-commit replace strategy without a staging table this project
+  doesn't have. So the engine always forces exactly one commit for
+  ``replace`` regardless of ``batch_rows``, and warns that the setting
+  was ignored when it isn't ``null``.
 """
 
 from __future__ import annotations

@@ -55,11 +55,15 @@ class SourceConfig(BaseModel):
     primary_key: list[str] | None = None
     schema_contract: Literal["evolve", "freeze", "discard_value"] = "evolve"
     target_prefix: str | None = None
-    # How many rows per Iceberg commit when a connector streams a table in
-    # chunks (industrialization follow-up, point 4): more chunks trade lower
+    # How many rows per Iceberg commit when the engine streams a table in
+    # chunks (fix/ingest-batching-grpc, part A): more chunks trade lower
     # peak memory for more commits -- see docs/DLT_EVAL.md's chunked-batches
-    # measurement (10M rows: 899 MiB/1 commit vs 362 MiB/20 commits).
-    batch_rows: int | None = None
+    # measurement (10M rows: 899 MiB/1 commit vs 362 MiB/20 commits). Default
+    # matches that measurement's own batch size. ``null`` disables chunking
+    # (one commit, the pre-fix behavior) -- ``write_disposition: replace``
+    # always ignores this and commits once regardless (see
+    # ``ingestion/sinks/base.py``'s docstring for why).
+    batch_rows: int | None = 500_000
     # Reserved for the later "50 instances" phase (per-tenant source copies).
     # Deliberately unused here -- no instance-aware logic exists yet.
     instance: str | None = None
@@ -117,4 +121,5 @@ class SourceConfig(BaseModel):
     def _apply_rules(self) -> SourceConfig:
         rules.check_write_disposition(self)
         rules.check_family_fields(self)
+        rules.check_batch_rows(self)
         return self
