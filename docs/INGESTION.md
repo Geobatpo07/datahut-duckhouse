@@ -55,7 +55,7 @@ module layout).
 ## `dhd ingest` commands
 
 ```
-dhd ingest run <source> [--table T ...] [--dry-run] [--full-refresh] [--yes]
+dhd ingest run <source> [--table T ...] [--dry-run] [--full-refresh] [--yes] [--sink auto|flight|direct]
 dhd ingest run --all [--family sql|files|rest] [--fail-fast]
 dhd ingest list                        # name, family, schedule, last run status
 dhd ingest validate [<source>]         # registry, secrets (names only), catalog coherence
@@ -64,8 +64,9 @@ dhd ingest new <family> <name>         # registry entry + skeleton test
 ```
 
 - **Exit codes**: `0` success; `1` at least one source failed to run;
-  `2` a configuration problem (bad `sources.yml`, a missing secret, or a
-  `merge` source whose client and Flight server don't share a catalog).
+  `2` a configuration problem (bad `sources.yml`, a missing secret, a
+  catalog-identity mismatch, an explicit `--sink direct` that isn't
+  possible from this process, or an unknown `--sink` value).
 - `--table` narrows extraction to specific resources, same as editing
   `resources` for just this run -- needs a single source, not `--all`.
 - `--dry-run` resolves the source, connects for real (querying a `sql`
@@ -158,40 +159,69 @@ in practice. **`incremental` + `append` is rejected at validation time**
 instead of duplicating anything -- a different failure mode, not
 inherently wrong if a source genuinely re-pulls its whole window at once.
 
-## Who actually writes to Iceberg (single writer, ADR-0001)
+## Who actually writes to Iceberg: sink routing (ADR-0006, decision 5)
 
-| `write_disposition` | Who writes | How |
-|---|---|---|
-| `replace` | **the Flight server** | `FlightSink` -- `con.upload_table(mode="replace")`, the same action `dhd create-table`/`insert` use |
-| `append` | **the Flight server** | `FlightSink` -- `con.upload_table(mode=None)` (create-or-append) |
-| `merge` | the client, direct via pyiceberg | `DirectSink`, gated by a catalog-identity check |
+Each source has `sink: auto | flight | direct` (default `auto`),
+overridable per run with `--sink`:
 
-**Verified 2026-11-08**: before this was fixed, a table loaded this way
-was written pyiceberg-direct and was **invisible** to `dhd query`/`dhd
-list-tables` -- two physically different SQLite catalog files, one in the
-Flight server's Docker named volume, one on the host. Fix:
-`replace`/`append` now write through the Flight server itself
-(`ingestion/sinks/flight_sink.py`), so a table lands exactly where `dhd
-query` already looks. One real consequence worth stating plainly: `dhd
-ingest run` now *always* needs a reachable Flight server, for every
-`write_disposition`, not a serverless batch path.
+| `sink` | Behavior |
+|---|---|
+| `auto` (default) | `direct` whenever this process can reach the catalog and storage directly (`ingestion.sinks.router.check_direct_capacity`); `flight` otherwise. No size threshold -- a real routing-threshold measurement (docs/spikes/NESSIE_SPIKES_2.md, T6) found direct faster in every cell tested, up to 7.7x at 10M target rows, with no crossover point. |
+| `flight` (explicit) | Always `FlightSink`, through the Flight server -- `con.upload_table(...)`, the same action `dhd create-table`/`insert` use. Warns (not blocked) if the estimated load reaches `DHD_SINK_WARN_ROWS` rows (default 1,000,000): direct would likely be faster at that scale. |
+| `direct` (explicit) | Always `DirectSink`, straight to Iceberg via pyiceberg, bypassing Flight entirely. Fails with **exit code 2** if not possible from this process -- never a silent fallback to `flight`. |
 
-`merge` still has no Flight-level equivalent: `HybridBackend` inherits a
-working `upsert()` *method* unmodified from xorq's `PyIcebergBackend`, but
-no Flight action reaches it over the wire. So `merge` still writes
-directly via pyiceberg from the client -- but **only once proven to be a
-single writer**: `ingestion/sinks/catalog_guard.py` registers a tiny
-action at runtime (xorq's own `add-action`, no `HybridBackend`/xorq
-change) that reports the server's resolved catalog URI and warehouse
-path, and compares them to the client's own. A mismatch exits **2** with
-both catalogs named and a concrete fix (also checked proactively by `dhd
-ingest validate` for every configured `merge` source), instead of
-silently writing to a second, invisible catalog.
+`DirectSink` now writes every `write_disposition` (`replace`/`append`/
+`merge`), not just `merge` -- it maps `replace`→`overwrite`,
+`append`→`append`, `merge`→`merge` onto the same `upload_table(mode=...)`
+the direct pyiceberg engine already exposed. `FlightSink` still only
+knows `replace`/`append`: an explicit `--sink flight` on a `merge`
+source fails with a clean `SinkError` (`HybridBackend` inherits a
+working `upsert()` *method* from xorq's `PyIcebergBackend`, but no
+Flight action reaches it over the wire -- unchanged from before this
+ADR).
 
-**Next** (not done here, estimate): a real `merge`-over-Flight needs a new
-Flight action calling `server._conn.upsert(...)` -- small, same pattern as
-the catalog-identity/schema-evolution actions already in
-`ingestion/sinks/`, maybe half a day including tests.
+Every direct write (whichever `write_disposition`) is still gated by a
+catalog-identity check, `ingestion/sinks/catalog_guard.py` -- demoted
+from "the reason direct is allowed" (its pre-ADR-0006 role) to a safety
+net run underneath the real gate, `check_direct_capacity`: capacity
+proves this process *can* reach the catalog and storage; the guard
+additionally proves it resolves to the exact *same* catalog as the rest
+of the deployment (catching, for example, a stale local
+`ICEBERG_WAREHOUSE_PATH` override that would otherwise land data
+somewhere `dhd query` never looks). A mismatch exits **2** with both
+catalogs named (also checked proactively by `dhd ingest validate`, still
+only for `merge` sources today -- not yet extended to every source that
+could route direct).
+
+Commit conflicts (two writers racing on the same table) are retried with
+exponential backoff and jitter, up to `DHD_COMMIT_RETRY_ATTEMPTS`
+attempts (default 5) -- `ingestion.sinks.base.with_commit_retry`, wired
+into `DirectSink`. Verified against a real Nessie catalog with two
+concurrent writers: exact final data, no loss, no duplication (see
+`scripts/verify_commit_retry_nessie.py`). Not yet wired into
+`FlightSink` -- its commits happen server-side, inside the Flight
+server's single process, so two Flight *clients* racing on the same
+table is not reachable to test without a second Flight server process.
+
+`batch_rows`'s *default* (when a source doesn't set it explicitly in
+`sources.yml`) depends on the resolved sink: `500_000` for `direct`, a
+single commit for `flight` (through Flight, more commits only add more
+of the same re-export-the-whole-database cost per run --
+[DLT_EVAL.md](DLT_EVAL.md), section 6). An explicit `batch_rows`
+(including an explicit `null`, "disable chunking") always wins,
+regardless of which sink ends up handling the write. `replace` still
+always forces a single commit, whatever the sink.
+
+**Historical note**: before ADR-0006, `replace`/`append` always went
+through the Flight server unconditionally (fixed 2026-11-08, after a
+table loaded via a separate pyiceberg-direct SQLite catalog was found
+invisible to `dhd query`). That fix is still exactly correct in spirit
+-- the direct and Flight paths now resolve to the *same* shared catalog,
+so routing between them is just a performance decision, not a
+visibility risk, at least for `dhd query`/`dhd list-tables`
+(docs/CATALOG.md's "Visibility" section covers what is and is not
+verified yet, including the one case -- dbt's `dev` target -- found not
+to work at all, independent of routing).
 
 ## Incremental extraction
 
