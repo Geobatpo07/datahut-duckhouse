@@ -1,0 +1,218 @@
+# Ingestion: the source registry (Vague 1b)
+
+How to add a source to `dhd ingest-dlt`, and what each registry field
+means. Results from actually running this at scale (incremental, schema
+evolution, crash-resume, volume) are in [docs/DLT_EVAL.md](DLT_EVAL.md).
+
+## Adding a source in 5 steps
+
+1. **Generate the skeleton.**
+
+   ```bash
+   uv run python scripts/new_source.py sql my_source     # or: files | rest
+   ```
+
+   This appends a `TODO`-annotated entry to `ingestion/dlt/sources.yml` and
+   writes `tests/test_source_my_source.py`.
+
+2. **Fill in the `TODO`s** the generator printed -- the real `secret_ref`
+   (an environment variable *name*, never the value), the real
+   `dialect`/`path`/`base_url`, and `resources` (tables/resource names, or
+   `[]` for "every table" -- `sql` only).
+
+3. **Validate.**
+
+   ```bash
+   uv run dhd sources validate
+   ```
+
+   Reports every problem with its line and field, not just the first one.
+
+4. **Pick `write_disposition` and `schema_contract`** (see below) --
+   `replace` + `evolve` are safe defaults for a first pass.
+
+5. **Run it.**
+
+   ```bash
+   uv run dhd ingest-dlt --source my_source --dry-run   # sanity check, no I/O
+   uv run dhd ingest-dlt --source my_source
+   uv run pytest tests/test_source_my_source.py
+   ```
+
+No code change is needed in `pipeline.py` or `connectors/` for any of
+this -- adding a source is purely a `sources.yml` edit. `--all` runs every
+configured source; `--dry-run` validates and prints the resolved plan
+(family, connector, resources, write_disposition, schema_contract, whether
+it hits a real network) without touching Iceberg or the network at all.
+
+## The three families
+
+| Family | Connector module | What it wraps |
+|---|---|---|
+| `sql` | `connectors/sql.py` | dlt's `sql_database` (SQLAlchemy: sqlite3 stdlib, psycopg2, pymysql, pymssql) |
+| `files` | `connectors/files.py` | Local CSV/JSON/Parquet via pyarrow, optionally fetched over HTTP first (`http_url`) |
+| `rest` | `connectors/rest.py` | dlt's declarative `rest_api_source` |
+
+Every connector exposes the same contract: `extract_source(source,
+work_dir) -> {prefixed_resource_name: parquet_path}`, one Parquet file per
+table/resource, written in one call. `pipeline.py` dispatches to the right
+connector by `source.family` -- this is what lets task 2's "no code change
+per source" hold across all three families, not just `sql`.
+
+### `sql`
+
+Needs `dialect` (`sqlite`/`postgresql`/`mysql`/`sqlserver`) and
+`secret_ref` (the connection-URL env var). `resources: []` means every
+table in `schema`; an explicit list narrows it. `incremental: {column,
+type}` pulls only rows past a locally-tracked cursor (see "Incremental"
+below) instead of a full table scan every run.
+
+### `files`
+
+Needs `path` (local, repo-root-relative) and `format`
+(`csv`/`json`/`parquet`), or `http_url` to download first. Always exactly
+one resource (the file itself); `resources` defaults to `[name]` if
+omitted. JSON records with nested objects are flattened one level
+(`address: {city: ...}` -> `address_city`) so the resulting Parquet/Iceberg
+schema stays flat.
+
+### `rest`
+
+Needs `base_url` and `resources` (one per REST endpoint/path).
+`rest_options` is a free-form dict passed straight through to dlt's own
+`client`/`endpoint` config (`headers`, `params`, `paginator`) -- see
+`sources.yml`'s `open_brewery_db` entry for a real paginated example
+(`page_number` paginator, capped via `maximum_page` so a routine run stays
+bounded). Mark `network: true` -- its connector test then carries
+`@pytest.mark.network` and is excluded by default, same as `integration`.
+
+## write_disposition
+
+| Value | Behavior | Needs |
+|---|---|---|
+| `replace` (default) | Full create-or-overwrite every run | -- |
+| `append` | Always appends -- **not** idempotent, see below | -- |
+| `merge` | Upserts by primary key (pyiceberg `Table.upsert`) | `primary_key` |
+
+`append` duplicates rows on a re-run or a crash-then-resume once a table's
+commit has already landed (verified: `tests/test_ingest_dlt.py`'s
+`test_append_accumulates_on_rerun` and [DLT_EVAL.md](DLT_EVAL.md)'s
+crash-resume experiment). Pair it with `incremental` and still prefer
+`merge` whenever a stable primary key exists -- `merge` is idempotent
+regardless of how many times the same extracted rows get re-applied, which
+is what makes `incremental`'s inclusive cursor boundary (see below) safe
+in practice. **`incremental` + `append` is rejected at validation time**
+(no dedup key exists for `append` to fall back on); **`incremental` +
+`replace` only warns**, because it silently drops every unchanged row
+instead of duplicating anything -- a different failure mode, not
+inherently wrong if a source genuinely re-pulls its whole window at once.
+
+## Who actually writes to Iceberg (single writer, ADR-0001)
+
+For all three `write_disposition` values alike -- `merge` is not special
+here -- **the writer is the client process running `dhd ingest-dlt`**
+(`datahut_duckhouse.ingest.PyIcebergEngine`, talking to pyiceberg
+directly), never the Flight server/`HybridBackend`. `create_table` and
+`upload_table(mode=append|overwrite|merge)` all go through this exact same
+path.
+
+**Verified (2026-11-08), in this project's default configuration, this is
+not literal concurrent-writer corruption, but it is catalog
+fragmentation**, which is arguably worse day-to-day:
+
+- The Flight server's catalog lives in a named Docker volume
+  (`flight_data`, confirmed via `docker volume inspect
+  datahut-duckhouse_flight_data` -- `Driver: local`, mounted at Docker's
+  own internal storage, never bind-mounted to the host).
+- `dhd ingest-dlt` run from the host falls back to
+  `ingestion/data/pyiceberg_catalog.db` **on the host** (`_local_meta_dir()`
+  in `ingest.py`) -- confirmed by opening that file directly: it already
+  held leftover tables from earlier, unrelated sessions (`sqlite_chinook_*`,
+  `smoke_*`), proving it is a real, silently-accumulating, long-lived
+  fallback location, not a throwaway temp file.
+- These are two **physically different SQLite files**. A table loaded by
+  `dhd ingest-dlt` is invisible to `dhd query`/`dhd list-tables --engine
+  flight` and vice versa, even though both may write into the *same*
+  underlying S3/MinIO bucket (`ICEBERG_WAREHOUSE` is shared via `.env`) --
+  the data files can coexist on S3 while neither catalog knows the other
+  table exists.
+- **If `ICEBERG_CATALOG_URI` is ever pointed at one shared catalog for
+  both** (e.g. a future Postgres-backed catalog -- Nessie is a separate,
+  larger change, ADR-0002), the risk flips: the Flight server and every
+  concurrent `dhd ingest-dlt` run become genuine concurrent writers to the
+  *same* catalog, which is exactly the "single writer" assumption
+  ADR-0001 flagged as an explicit interim limitation of a SQL(ite) catalog
+  -- and which neither pyiceberg nor this project arbitrates today.
+
+**Proposed alternative, not implemented without explicit approval**:
+route `dhd ingest-dlt`'s writes through the Flight server instead of
+pyiceberg-direct (the same Flight action `dhd create-table`/`insert`
+already use). This is a real design change, not a one-line fix:
+`write_disposition: merge` has no equivalent in `HybridBackend` today
+(only `append`/`overwrite`, per ADR-0001) and would need one added
+server-side; it reintroduces the client/server Python-minor-version
+dependency (`flight_version_guard.py`, `chore/python-matrix`) for a path
+that was deliberately built to need no Flight server at all
+(`ingest_dlt.py`'s own docstring); and it would mean rewriting
+`ingest_dlt.py`'s "always uses the pyiceberg engine... no Flight server
+needed" claim throughout the docs. A single real writer would resolve
+*both* the fragmentation and the concurrency risk at once -- but is a
+decision for whoever owns this trade-off, not something to default into.
+
+## Incremental extraction
+
+```yaml
+incremental:
+  column: updated_at
+  type: timestamp   # or: bigint, etc. -- a dlt cursor type hint
+```
+
+Tracks the highest value of `column` seen so far in a small local JSON
+file per `(source, resource)` under `ingestion/dlt/_state/` (gitignored --
+this is a cursor, not data). **Verified caveat**: the lower bound is
+inclusive (`>=`), so any rows that happen to share the exact cursor value
+already recorded (e.g. a bulk-backfilled column where many rows got the
+same timestamp) are re-extracted on every subsequent run, not skipped --
+harmless under `merge` (idempotent), would duplicate under `append`. See
+[DLT_EVAL.md](DLT_EVAL.md), experiment 1.
+
+**Deletions are never detected.** A row removed from the source stays in
+the Iceberg table forever under incremental+merge -- there is no cursor
+value a deleted row could report. Verified live; see DLT_EVAL.md.
+
+## schema_contract
+
+Applied only when a table **already exists** (a brand-new table just
+takes the first run's schema as-is). Verified against pyiceberg 0.11.1,
+which raises `ValueError` on an unseen column and suggests
+`union_by_name` -- this is exactly what `evolve` does, proactively.
+
+| Value | Behavior |
+|---|---|
+| `evolve` (default) | Widens the Iceberg table's schema in place, old rows get `null` for the new column |
+| `freeze` | Rejects the write with a clear message naming the new column(s) |
+| `discard_value` | Silently drops the unrecognized column(s), keeps the table's schema unchanged |
+
+A column *missing* from the incoming data (vs. the table's schema) is
+never a contract concern -- pyiceberg already fills it with `null`.
+
+## Secrets
+
+`secret_ref` is always an environment variable **name**, never a value --
+see `.devcontainer/.env.example` for the real variable names
+(`CHINOOK_POSTGRES_URL`, etc.). `sources.yml` itself never holds a
+connection string, API key, or password.
+
+## Exploitation: the run log
+
+Every `dhd ingest-dlt` run logs one row per table to a `_ingest_runs`
+Iceberg table (source, table, start, end, duration, rows, status, error) --
+appended through the same connection already open, so it costs no extra
+round trip. If that table can't be prepared or appended to, it falls back
+to a local SQLite file (`ingestion/dlt/_state/ingest_runs.db`) and says so
+on stderr rather than silently dropping the row.
+
+Every table write -- whatever its `write_disposition` -- is exactly **one**
+Iceberg commit per run, regardless of how many Parquet chunks a connector
+pulled it in. Verified by counting snapshots across 3 runs
+(`tests/test_ingest_dlt.py::TestOneCommitPerTablePerRun`).

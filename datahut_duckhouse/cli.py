@@ -196,6 +196,32 @@ def insert(ctx: click.Context, table: str, source: str, mode: str) -> None:
     click.echo(f"{verb} '{table}' with {data.num_rows} rows.")
 
 
+@cli.command("drop-table")
+@click.argument("name")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+@click.pass_context
+def drop_table(ctx: click.Context, name: str, yes: bool) -> None:
+    """Drop table NAME. Irreversible -- asks for confirmation unless --yes.
+
+    Works against both engines: the flight engine dispatches xorq's own
+    (pre-existing, unmodified) `drop_table` Flight action; --engine
+    pyiceberg drops straight from the Iceberg catalog.
+    """
+    backend = _connect_or_die(ctx)
+    if name not in set(backend.list_tables()):
+        raise click.ClickException(f"Table '{name}' does not exist.")
+    if not yes and not click.confirm(f"Drop table '{name}'? This cannot be undone."):
+        click.echo("Aborted.")
+        return
+    if _resolve_engine(ctx) == "pyiceberg":
+        backend.drop_table(name)
+    else:
+        backend.con.do_action(
+            "drop_table", {"name": name, "database": None, "force": False}
+        )
+    click.echo(f"Dropped '{name}'.")
+
+
 @cli.command()
 @click.argument("sql")
 @click.option(
@@ -226,24 +252,67 @@ def query(ctx: click.Context, sql: str, limit: int | None, fmt: str) -> None:
 @click.option(
     "--source",
     "source_name",
-    default="all",
-    show_default=True,
+    default=None,
     help="Source name from ingestion/dlt/sources.yml, or 'all'.",
 )
-def ingest_dlt(source_name: str) -> None:
-    """Extract a dlt-configured source (Chinook, etc.) and load it into Iceberg.
+@click.option(
+    "--all",
+    "run_all",
+    is_flag=True,
+    help="Run every source in ingestion/dlt/sources.yml. Same as --source all.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Validate sources.yml and print what would run, without extracting, "
+    "connecting to Iceberg, or writing anything.",
+)
+def ingest_dlt(source_name: str | None, run_all: bool, dry_run: bool) -> None:
+    """Extract a dlt-configured source (sql/files/rest family) and load it into
+    Iceberg.
 
     Always uses the pyiceberg engine, independent of --engine/DHD_ENGINE:
     this is a serverless batch load, so no Flight server is needed at all --
     not a workaround for the flight engine (see README's Python-version
     matrix section for the one thing that engine does need: a client and
-    server on the same Python minor version). Loads overwrite each table on
-    every run, so re-running this command never duplicates rows.
+    server on the same Python minor version). Each source's write_disposition
+    (ingestion/dlt/sources.yml) controls whether a re-run replaces, appends,
+    or merges -- see docs/INGESTION.md.
     """
-    from datahut_duckhouse.ingest_dlt import IngestDltError, run_ingest_dlt
+    if source_name and run_all:
+        raise click.ClickException("Pass either --source NAME or --all, not both.")
+    if not source_name and not run_all:
+        raise click.ClickException("Pass --source NAME or --all.")
+    target = "all" if run_all else source_name
+    assert target is not None  # guaranteed by the pass/not-both checks above
+
+    from datahut_duckhouse.ingest_dlt import IngestDltError
+
+    if dry_run:
+        from datahut_duckhouse.ingest_dlt import plan_ingest_dlt
+
+        try:
+            sources = plan_ingest_dlt(target)
+        except IngestDltError as exc:
+            raise click.ClickException(str(exc)) from exc
+        for source in sources:
+            resources = (
+                f"[{', '.join(source.resources)}]" if source.resources else "(all)"
+            )
+            click.echo(
+                f"{source.name}: family={source.family} connector={source.connector} "
+                f"resources={resources} write_disposition={source.write_disposition} "
+                f"schema_contract={source.schema_contract} network={source.network}"
+            )
+        click.echo(
+            f"\n({len(sources)} source{'s' if len(sources) != 1 else ''}, dry run)"
+        )
+        return
+
+    from datahut_duckhouse.ingest_dlt import run_ingest_dlt
 
     try:
-        results = run_ingest_dlt(source_name)
+        results = run_ingest_dlt(target)
     except IngestDltError as exc:
         raise click.ClickException(str(exc)) from exc
     if not results:
@@ -251,6 +320,71 @@ def ingest_dlt(source_name: str) -> None:
         return
     for table, (verb, n) in sorted(results.items()):
         click.echo(f"{verb.capitalize()} '{table}' - {n} rows.")
+
+
+@cli.group()
+def sources() -> None:
+    """Inspect ingestion/dlt/sources.yml (the source registry)."""
+
+
+@sources.command("validate")
+def sources_validate() -> None:
+    """Validate sources.yml against the registry schema (readable line/field errors)."""
+    from datahut_duckhouse.ingest_dlt import _load_pipeline
+
+    pipeline = _load_pipeline()
+    warnings: list[str] = []
+    try:
+        configs = pipeline.load_sources(collect_warnings=warnings)
+    except pipeline.SourcesConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"OK: {len(configs)} source(s) valid.")
+    for config in configs:
+        click.echo(f"  - {config.name} ({config.family}/{config.connector})")
+    for warning in warnings:
+        click.echo(f"WARN: {warning}", err=True)
+
+
+@sources.command("list")
+def sources_list() -> None:
+    """List configured sources: name, family, connector, write_disposition, schedule, network."""
+    from datahut_duckhouse.ingest_dlt import _load_pipeline
+
+    pipeline = _load_pipeline()
+    try:
+        configs = pipeline.load_sources()
+    except pipeline.SourcesConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if not configs:
+        click.echo("(no sources configured)")
+        return
+
+    headers = (
+        "name",
+        "family",
+        "connector",
+        "write_disposition",
+        "schedule",
+        "network",
+    )
+    rows = [
+        (
+            c.name,
+            c.family,
+            c.connector,
+            c.write_disposition,
+            c.schedule or "-",
+            "yes" if c.network else "no",
+        )
+        for c in configs
+    ]
+    widths = [
+        max(len(headers[i]), *(len(r[i]) for r in rows)) for i in range(len(headers))
+    ]
+    click.echo("  ".join(h.ljust(w) for h, w in zip(headers, widths, strict=True)))
+    click.echo("  ".join("-" * w for w in widths))
+    for row in rows:
+        click.echo("  ".join(v.ljust(w) for v, w in zip(row, widths, strict=True)))
 
 
 @cli.group()

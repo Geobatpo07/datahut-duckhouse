@@ -94,6 +94,22 @@ def test_list_tables_empty(runner, pyiceberg_env):
     assert "no tables" in r.output
 
 
+def test_drop_table(runner, pyiceberg_env, people_csv):
+    _run(runner, "create-table", "people", people_csv)
+    assert "people" in _run(runner, "list-tables").output
+
+    r = _run(runner, "drop-table", "people", "--yes")
+    assert r.exit_code == 0, r.output
+    assert "Dropped 'people'" in r.output
+    assert "no tables" in _run(runner, "list-tables").output
+
+
+def test_drop_table_missing_is_rejected(runner, pyiceberg_env):
+    r = _run(runner, "drop-table", "ghost", "--yes")
+    assert r.exit_code != 0
+    assert "does not exist" in r.output
+
+
 def test_engine_selected_via_env(runner, pyiceberg_env, monkeypatch, people_csv):
     monkeypatch.setenv("DHD_ENGINE", "pyiceberg")
     r = runner.invoke(cli_mod.cli, ["create-table", "people", people_csv])

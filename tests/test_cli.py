@@ -214,3 +214,47 @@ class TestCliEndToEnd:
         r = runner.invoke(cli_mod.cli, ["query", "SELECT * FROM nums", "--limit", "5"])
         assert r.exit_code == 0, r.output
         assert "(5 rows)" in r.output
+
+    def test_drop_table(self, runner, flight_server, tmp_path):
+        src = tmp_path / "throwaway.csv"
+        src.write_text("id\n1\n2\n")
+        r = runner.invoke(cli_mod.cli, ["create-table", "throwaway", str(src)])
+        assert r.exit_code == 0, r.output
+        assert "throwaway" in runner.invoke(cli_mod.cli, ["list-tables"]).output
+
+        r = runner.invoke(cli_mod.cli, ["drop-table", "throwaway", "--yes"])
+        assert r.exit_code == 0, r.output
+        assert "Dropped 'throwaway'" in r.output
+        assert "throwaway" not in runner.invoke(cli_mod.cli, ["list-tables"]).output
+
+    def test_drop_table_asks_for_confirmation(self, runner, flight_server, tmp_path):
+        src = tmp_path / "throwaway2.csv"
+        src.write_text("id\n1\n")
+        runner.invoke(cli_mod.cli, ["create-table", "throwaway2", str(src)])
+
+        r = runner.invoke(cli_mod.cli, ["drop-table", "throwaway2"], input="n\n")
+        assert r.exit_code == 0, r.output
+        assert "Aborted" in r.output
+        assert "throwaway2" in runner.invoke(cli_mod.cli, ["list-tables"]).output
+
+    def test_drop_table_missing_is_rejected(self, runner, flight_server):
+        r = runner.invoke(cli_mod.cli, ["drop-table", "ghost", "--yes"])
+        assert r.exit_code != 0
+        assert "does not exist" in r.output
+
+
+class TestSourcesCommand:
+    """`dhd sources validate`/`list` against the real ingestion/dlt/sources.yml
+    -- no Docker, no network, just the registry parse+validate path."""
+
+    def test_validate_the_real_registry(self, runner):
+        r = runner.invoke(cli_mod.cli, ["sources", "validate"])
+        assert r.exit_code == 0, r.output
+        assert "source(s) valid" in r.output
+        assert "pg_chinook_customers_incremental" in r.output
+
+    def test_list_the_real_registry(self, runner):
+        r = runner.invoke(cli_mod.cli, ["sources", "list"])
+        assert r.exit_code == 0, r.output
+        assert "write_disposition" in r.output  # header row
+        assert "jsonplaceholder" in r.output

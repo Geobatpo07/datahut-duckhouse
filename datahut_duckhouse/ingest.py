@@ -27,6 +27,10 @@ class IngestUnavailableError(RuntimeError):
     """The Iceberg catalog / object store could not be reached."""
 
 
+class SchemaContractViolationError(RuntimeError):
+    """A ``schema_contract: freeze`` source tried to write a new column."""
+
+
 def _env(*names: str) -> str | None:
     for name in names:
         value = os.getenv(name)
@@ -170,6 +174,9 @@ class PyIcebergEngine:
     def list_tables(self) -> list[str]:
         return [tbl[-1] for tbl in self.catalog.list_tables(self.namespace)]
 
+    def drop_table(self, table_name: str) -> None:
+        self.catalog.drop_table(self._ident(table_name))
+
     def create_table(self, table_name: str, data, **_: object) -> bool:
         table = _to_arrow(data)
         iceberg_table = self.catalog.create_table(
@@ -178,14 +185,53 @@ class PyIcebergEngine:
         iceberg_table.append(table)
         return True
 
-    def upload_table(self, table_name: str, data, mode: str = "append", **_: object):
+    def upload_table(
+        self,
+        table_name: str,
+        data,
+        mode: str = "append",
+        primary_key: list[str] | None = None,
+        **_: object,
+    ):
         table = _to_arrow(data)
         iceberg_table = self.catalog.load_table(self._ident(table_name))
         if mode == "overwrite":
             iceberg_table.overwrite(table)
+        elif mode == "merge":
+            if not primary_key:
+                raise ValueError("upload_table(mode='merge') needs primary_key.")
+            iceberg_table.upsert(table, join_cols=list(primary_key))
         else:
             iceberg_table.append(table)
         return True
+
+    def apply_schema_contract(
+        self, table_name: str, data: pa.Table, contract: str
+    ) -> pa.Table:
+        """Enforce ``schema_contract`` (task 3) before writing into an
+        *existing* table. Verified against pyiceberg 0.11.1: appending or
+        overwriting with an unseen column raises ``ValueError`` naming it and
+        suggesting ``union_by_name`` -- which is exactly what 'evolve' does
+        here, proactively, so the caller never hits that error. A column
+        *missing* from the incoming data is not a contract concern: pyiceberg
+        already fills it with nulls with no special handling needed.
+        """
+        iceberg_table = self.catalog.load_table(self._ident(table_name))
+        existing_cols = set(iceberg_table.schema().as_arrow().names)
+        new_cols = [c for c in data.column_names if c not in existing_cols]
+        if not new_cols:
+            return data
+        if contract == "freeze":
+            raise SchemaContractViolationError(
+                f"'{table_name}': incoming data has column(s) not in the "
+                f"table's schema ({', '.join(new_cols)}) and this source's "
+                f"schema_contract is 'freeze'."
+            )
+        if contract == "discard_value":
+            return data.drop_columns(new_cols)
+        # "evolve" (default): widen the Iceberg table's schema in place.
+        iceberg_table.update_schema().union_by_name(data.schema).commit()
+        return data
 
     # -- read path ---------------------------------------------------------
 
