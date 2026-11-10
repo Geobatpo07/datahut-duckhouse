@@ -121,9 +121,9 @@ class TestMissingDriver:
         )
         sql_connector.check_driver("sqlite")  # does not raise
 
-    def test_installed_driver_passes(self, pipeline):
+    def test_installed_driver_passes(self, pipeline, monkeypatch):
         from connectors import sql as sql_connector
 
+        monkeypatch.setattr(sql_connector, "find_spec", lambda name: object())
         sql_connector.check_driver("sqlite")
-        # psycopg2-binary is installed via the `ingest` extra in this env.
         sql_connector.check_driver("postgresql")
