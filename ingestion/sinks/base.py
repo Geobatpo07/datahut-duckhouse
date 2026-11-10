@@ -50,9 +50,19 @@ that means per disposition, if the process is killed between two batches:
 
 from __future__ import annotations
 
-from typing import Protocol
+import os
+import random
+import time
+from collections.abc import Callable
+from typing import Protocol, TypeVar
 
 import pyarrow as pa
+from pyiceberg.exceptions import CommitFailedException
+
+T = TypeVar("T")
+
+_DEFAULT_MAX_ATTEMPTS = 5
+_BASE_DELAY_SECONDS = 0.5
 
 
 class SinkError(RuntimeError):
@@ -61,6 +71,59 @@ class SinkError(RuntimeError):
 
 class SchemaContractViolationError(RuntimeError):
     """A ``schema_contract: freeze`` source tried to write a new column."""
+
+
+class CommitConflictError(SinkError):
+    """A write kept conflicting with a concurrent writer past the retry budget."""
+
+
+def _max_attempts() -> int:
+    """``DHD_COMMIT_RETRY_ATTEMPTS`` (ADR-0006, decision 6) -- not a
+    ``Sink``-level parameter, since every table write in a run should use
+    the same budget."""
+    raw = os.getenv("DHD_COMMIT_RETRY_ATTEMPTS")
+    if not raw:
+        return _DEFAULT_MAX_ATTEMPTS
+    try:
+        attempts = int(raw)
+    except ValueError:
+        return _DEFAULT_MAX_ATTEMPTS
+    return attempts if attempts > 0 else _DEFAULT_MAX_ATTEMPTS
+
+
+def with_commit_retry(write: Callable[[], T], *, table_name: str) -> T:
+    """Call ``write()`` (a whole reload-mutate-commit operation -- a stale
+    ``Table`` handle always re-conflicts, so retrying means calling
+    ``write()`` again from scratch, not re-committing the same handle),
+    retrying on :class:`~pyiceberg.exceptions.CommitFailedException` --
+    pyiceberg does not replay a conflicting commit itself (ADR-0006,
+    decision 6) -- with exponential backoff and jitter, up to
+    ``DHD_COMMIT_RETRY_ATTEMPTS`` attempts (default 5).
+
+    ``CommitStateUnknownException`` (the commit's outcome is ambiguous --
+    e.g. the request succeeded server-side but the response was lost) is
+    deliberately NOT retried here: blindly retrying an unknown-state write
+    risks double-applying it. It propagates to the caller unchanged.
+    """
+    attempts = _max_attempts()
+    last_exc: CommitFailedException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return write()
+        except CommitFailedException as exc:
+            last_exc = exc
+            if attempt == attempts:
+                break
+            delay = _BASE_DELAY_SECONDS * (2 ** (attempt - 1)) + random.uniform(
+                0, _BASE_DELAY_SECONDS
+            )
+            time.sleep(delay)
+    raise CommitConflictError(
+        f"'{table_name}': commit kept conflicting with a concurrent writer "
+        f"after {attempts} attempt(s) ({type(last_exc).__name__}: {last_exc}). "
+        f"Retry the run; if this keeps happening, something is writing to "
+        f"'{table_name}' continuously (see ADR-0006, decision 6)."
+    ) from last_exc
 
 
 class Sink(Protocol):

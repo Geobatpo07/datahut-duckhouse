@@ -15,7 +15,11 @@ from __future__ import annotations
 
 import pyarrow as pa
 
-from ingestion.sinks.base import SchemaContractViolationError, SinkError
+from ingestion.sinks.base import (
+    SchemaContractViolationError,
+    SinkError,
+    with_commit_retry,
+)
 from ingestion.sinks.catalog_guard import check_same_catalog
 
 
@@ -53,9 +57,15 @@ class DirectSink:
             )
         exists = table_name in self.list_tables()
         if not exists:
-            self.engine.create_table(table_name, data)
+            with_commit_retry(
+                lambda: self.engine.create_table(table_name, data),
+                table_name=table_name,
+            )
             return "created"
-        self.engine.upload_table(
-            table_name, data, mode="merge", primary_key=primary_key
+        with_commit_retry(
+            lambda: self.engine.upload_table(
+                table_name, data, mode="merge", primary_key=primary_key
+            ),
+            table_name=table_name,
         )
         return "merged"
