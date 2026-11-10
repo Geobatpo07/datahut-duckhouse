@@ -1,7 +1,7 @@
 # Dogfooding notes — Vague 1 (Chinook multi-engine ingestion)
 
 Raw findings from actually running the multi-engine ingestion benchmark
-described in [README.md](../README.md#-banc-dessai-multi-moteurs). Numbers
+described in [README.md](../README.md#-multi-engine-test-bench-wave-1). Numbers
 below are measured, not estimated — see "Method" under each section for the
 exact command. Where something could not be verified, it says so instead of
 guessing.
